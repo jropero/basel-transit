@@ -33,10 +33,19 @@ export const tripBody = (from: Stop, to: Stop) =>
       </Params>
     </OJPTripRequest>`);
 
+// Dev uses the Vite proxy (token stays server-side); the static production build
+// calls the API directly because the host cannot proxy /ojp.
+const OJP_ENDPOINT = import.meta.env.DEV
+  ? "/ojp"
+  : "https://api.opentransportdata.swiss/ojp20";
+
 export async function ojp(body: string): Promise<Document> {
-  const res = await fetch("/ojp", {
+  const res = await fetch(OJP_ENDPOINT, {
     method: "POST",
-    headers: { "Content-Type": "application/xml" },
+    headers: {
+      "Content-Type": "application/xml",
+      ...(import.meta.env.DEV ? {} : { Authorization: `Bearer ${__OJP_TOKEN__}` }),
+    },
     body,
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
