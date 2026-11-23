@@ -6,8 +6,6 @@ export default defineConfig(({ mode }) => {
   const { OJP_TOKEN } = loadEnv(mode, process.cwd(), "");
   return {
     plugins: [react()],
-    // 98.css has a media query lightningcss rejects when minifying.
-    build: { cssMinify: false },
     server: {
       proxy: {
         "/ojp": {

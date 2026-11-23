@@ -197,9 +197,6 @@ importers:
 
   .:
     dependencies:
-      98.css:
-        specifier: ^0.1.21
-        version: 0.1.21
       react:
         specifier: ^19.3.1
         version: 19.3.1
@@ -227,9 +224,6 @@ importers:
         version: 1.7.0(@vitest/ui@5.1.0)(typescript@7.0.2)
 
 packages:
-
-  98.css@0.1.21:
-    resolution: {integrity: sha512-ddk5qtUWyapM0Bzd5jwGExoE5fdSEGrP+F5VbYjyZLf2c9UVmn6w2NPTvCsoD4BWdGsjdLjlkQGhWwWTJcYQJQ==}
 
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -1320,8 +1314,6 @@ packages:
     engines: {node: '>=14.18.0'}
 
 snapshots:
-
-  98.css@0.1.21: {}
 
   '@babel/code-frame@7.29.7':
     dependencies:

@@ -150,6 +150,7 @@ export default function App() {
   const [results, setResults] = useState<Stop[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [onward, setOnward] = useState<Record<string, string[]> | null>(null);
+  const [showSearch, setShowSearch] = useState(false);
 
   function updateStops(next: Stop[]) {
     setStops(next);
@@ -160,7 +161,7 @@ export default function App() {
     setStatus("Loading…");
     try {
       setDeps(parseDepartures(await ojp(departuresBody(selected.ref))));
-      setStatus(`Updated ${hhmm(new Date())}`);
+      setStatus(`updated ${hhmm(new Date())}`);
     } catch (err) {
       setStatus(String(err));
     }
@@ -198,101 +199,95 @@ export default function App() {
 
   const isSaved = (s: Stop) => stops.some((x) => x.ref === s.ref);
 
+  const pivot = isSaved(selected) ? stops : [...stops, selected];
+  // "Basel, Burgfelderplatz" -> "burgfelderplatz" for the pivot header.
+  const short = (name: string) => name.replace(/^Basel,\s*/, "");
+
   return (
-    <div className="window" style={{ margin: 24, maxWidth: 640 }}>
-      <div className="title-bar">
-        <div className="title-bar-text">{selected.name}: next departures</div>
-      </div>
-      <div className="window-body">
-        <div className="field-row">
-          <label htmlFor="stop">Stop:</label>
-          <select
-            id="stop"
-            value={selected.ref}
-            onChange={(e) => setSelected(stops.find((s) => s.ref === e.target.value)!)}
-          >
-            {!isSaved(selected) && <option value={selected.ref}>{selected.name}</option>}
-            {stops.map((s) => (
-              <option key={s.ref} value={s.ref}>{s.name}</option>
-            ))}
-          </select>
-          <button
-            disabled={!isSaved(selected) || stops.length <= 1}
-            onClick={() => {
-              const next = stops.filter((s) => s.ref !== selected.ref);
-              updateStops(next);
-              setSelected(next[0]);
-            }}
-          >
-            Remove
+    <main className="app">
+      <p className="brand">Basel Transit</p>
+      <nav className="pivot">
+        {pivot.map((s) => (
+          <button key={s.ref} aria-current={s.ref === selected.ref} onClick={() => setSelected(s)}>
+            {short(s.name)}
           </button>
-          <button onClick={load}>Refresh</button>
-        </div>
-
-        <form onSubmit={search} className="field-row" style={{ marginTop: 8 }}>
-          <input
-            type="text"
-            placeholder="Search stop…"
-            style={{ flex: 1 }}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <button type="submit">Search</button>
-        </form>
-        {results.length > 0 && (
-          <ul className="tree-view" style={{ marginTop: 8 }}>
-            {results.map((s) => (
-              <li key={s.ref} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>{s.name}</span>
-                <span>
-                  <button onClick={() => { setSelected(s); setResults([]); }}>Show</button>
-                  <button disabled={isSaved(s)} onClick={() => updateStops([...stops, s])}>Save</button>
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {groupByDirection(deps).map(([key, list]) => (
-          <fieldset key={key} style={{ marginTop: 8 }}>
-            <legend>
-              <button aria-expanded={open === key} onClick={() => toggle(key)}>
-                {open === key ? "▾" : "▸"} {list[0].mode === "tram" ? "🚋" : "🚌"} {list[0].line} → {list[0].to}
-              </button>
-            </legend>
-            <table style={{ width: "100%" }}>
-              <tbody>
-                {list.map((d, i) => {
-                  const delay = Math.round((d.expected.getTime() - d.planned.getTime()) / 60000);
-                  const left = Math.max(0, Math.floor((d.expected.getTime() - Date.now()) / 60000));
-                  return (
-                    <tr key={i}>
-                      <td>{d.to}</td>
-                      <td style={{ width: 40 }}>{d.quay}</td>
-                      <td style={{ width: 50 }}>{hhmm(d.planned)}</td>
-                      <td style={{ width: 40 }}>{delay > 0 ? `+${delay}'` : ""}</td>
-                      <td style={{ width: 50, textAlign: "right" }}>{left === 0 ? "now" : `${left} min`}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {open === key && (
-              <ul className="tree-view" style={{ marginTop: 6 }}>
-                {onward?.[key] ? (
-                  onward[key].map((s, i) => <li key={i}>{s}</li>)
-                ) : (
-                  <li>Loading stops…</li>
-                )}
-              </ul>
-            )}
-          </fieldset>
         ))}
+      </nav>
 
-        <p className="status-bar" style={{ marginTop: 8 }}>
-          <span className="status-bar-field">{status}</span>
-        </p>
+      <div className="appbar">
+        <button onClick={load} aria-label="Refresh">↻ refresh</button>
+        <button
+          aria-label="Remove stop"
+          disabled={!isSaved(selected) || stops.length <= 1}
+          onClick={() => {
+            const next = stops.filter((s) => s.ref !== selected.ref);
+            updateStops(next);
+            setSelected(next[0]);
+          }}
+        >
+          ✕ remove
+        </button>
+        <button aria-expanded={showSearch} onClick={() => setShowSearch(!showSearch)}>⌕ search</button>
       </div>
-    </div>
+
+      {showSearch && (
+        <>
+          <form onSubmit={search} className="search">
+            <input
+              type="text"
+              aria-label="Stop name"
+              placeholder="stop name"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <button type="submit" className="btn">go</button>
+          </form>
+          {results.length > 0 && (
+            <ul className="results">
+              {results.map((s) => (
+                <li key={s.ref}>
+                  <span>{s.name}</span>
+                  <button className="btn" onClick={() => { setSelected(s); setResults([]); setShowSearch(false); }}>show</button>
+                  <button className="btn" disabled={isSaved(s)} onClick={() => updateStops([...stops, s])}>save</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+
+      {groupByDirection(deps).map(([key, list]) => (
+        <section key={key}>
+          <button className="group" aria-expanded={open === key} onClick={() => toggle(key)}>
+            <span className={`tile ${list[0].mode}`}>
+              <b>{list[0].line}</b>
+              <small>{list[0].mode}</small>
+            </span>
+            <span className="deps">
+              <span className="dest">{list[0].to}</span>
+              {list.map((d, i) => {
+                const delay = Math.round((d.expected.getTime() - d.planned.getTime()) / 60000);
+                const left = Math.max(0, Math.floor((d.expected.getTime() - Date.now()) / 60000));
+                return (
+                  <span className="dep" key={i}>
+                    <span>{hhmm(d.planned)}</span>
+                    {delay > 0 && <span className="late">+{delay}'</span>}
+                    <span className="via">{d.to !== list[0].to ? d.to : d.quay && `quay ${d.quay}`}</span>
+                    <span className="left">{left === 0 ? "now" : `${left} min`}</span>
+                  </span>
+                );
+              })}
+            </span>
+          </button>
+          {open === key && (
+            <ul className="route">
+              {onward?.[key] ? onward[key].map((s, i) => <li key={i}>{s}</li>) : <li>loading stops…</li>}
+            </ul>
+          )}
+        </section>
+      ))}
+
+      <p className="status">{status}</p>
+    </main>
   );
 }
