@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { all, envelope, escapeXml, hhmm, loadStops, ojp, parseStops, saveStops, searchBody, short, text, type Stop } from "./ojp.ts";
+import RoutePlanner from "./Route.tsx";
 
-type Stop = { ref: string; name: string };
 type Departure = {
   line: string;
   dir: string;
@@ -10,28 +11,6 @@ type Departure = {
   planned: Date;
   expected: Date;
 };
-
-const STORAGE_KEY = "basel-transit:stops";
-const DEFAULT_STOPS: Stop[] = [{ ref: "ch:1:sloid:89303", name: "Basel, Burgfelderplatz" }];
-
-const envelope = (inner: string) => `<?xml version="1.0" encoding="UTF-8"?>
-<OJP xmlns="http://www.vdv.de/ojp" xmlns:siri="http://www.siri.org.uk/siri" version="2.0">
-  <OJPRequest><siri:ServiceRequest>
-    <siri:RequestTimestamp>${new Date().toISOString()}</siri:RequestTimestamp>
-    <siri:RequestorRef>basel-transit</siri:RequestorRef>
-    ${inner}
-  </siri:ServiceRequest></OJPRequest>
-</OJP>`;
-
-const escapeXml = (s: string) =>
-  s.replace(/[<>&'"]/g, (c) => `&#${c.charCodeAt(0)};`);
-
-const searchBody = (name: string) =>
-  envelope(`<OJPLocationInformationRequest>
-      <siri:RequestTimestamp>${new Date().toISOString()}</siri:RequestTimestamp>
-      <InitialInput><Name>${escapeXml(name)}</Name></InitialInput>
-      <Restrictions><Type>stop</Type><NumberOfResults>10</NumberOfResults></Restrictions>
-    </OJPLocationInformationRequest>`);
 
 const departuresBody = (ref: string, onward = false) =>
   envelope(`<OJPStopEventRequest>
@@ -43,26 +22,6 @@ const departuresBody = (ref: string, onward = false) =>
         <IncludeRealtimeData>true</IncludeRealtimeData>
       </Params>
     </OJPStopEventRequest>`);
-
-async function ojp(body: string): Promise<Document> {
-  const res = await fetch("/ojp", {
-    method: "POST",
-    headers: { "Content-Type": "application/xml" },
-    body,
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
-  return new DOMParser().parseFromString(await res.text(), "application/xml");
-}
-
-// Namespace-agnostic lookup: first descendant with this local name, text only.
-const text = (el: Element | Document, tag: string) =>
-  el.getElementsByTagNameNS("*", tag)[0]?.textContent?.trim() ?? "";
-const all = (el: Document, tag: string) => [...el.getElementsByTagNameNS("*", tag)];
-
-const parseStops = (doc: Document): Stop[] =>
-  all(doc, "PlaceResult")
-    .map((p) => ({ ref: text(p, "StopPlaceRef"), name: text(p, "StopPlaceName") }))
-    .filter((s) => s.ref);
 
 const parseDepartures = (doc: Document): Departure[] =>
   all(doc, "StopEvent").map((ev) => {
@@ -122,25 +81,6 @@ function groupByDirection(deps: Departure[]) {
   );
 }
 
-function loadStops(): Stop[] {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
-    return Array.isArray(saved) && saved.length ? saved : DEFAULT_STOPS;
-  } catch {
-    return DEFAULT_STOPS;
-  }
-}
-
-function saveStops(stops: Stop[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(stops));
-  } catch {
-    // Storage unavailable (private mode etc.): list just won't persist.
-  }
-}
-
-const hhmm = (d: Date) => d.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
-
 export default function App() {
   const [stops, setStops] = useState<Stop[]>(loadStops);
   const [selected, setSelected] = useState<Stop>(stops[0]);
@@ -151,6 +91,7 @@ export default function App() {
   const [open, setOpen] = useState<string | null>(null);
   const [onward, setOnward] = useState<Record<string, string[]> | null>(null);
   const [showSearch, setShowSearch] = useState(false);
+  const [view, setView] = useState<"departures" | "route">("departures");
 
   function updateStops(next: Stop[]) {
     setStops(next);
@@ -200,12 +141,20 @@ export default function App() {
   const isSaved = (s: Stop) => stops.some((x) => x.ref === s.ref);
 
   const pivot = isSaved(selected) ? stops : [...stops, selected];
-  // "Basel, Burgfelderplatz" -> "burgfelderplatz" for the pivot header.
-  const short = (name: string) => name.replace(/^Basel,\s*/, "");
 
   return (
     <main className="app">
       <p className="brand">Basel Transit</p>
+      <nav className="views">
+        {(["departures", "route"] as const).map((v) => (
+          <button key={v} aria-current={view === v} onClick={() => setView(v)}>{v}</button>
+        ))}
+      </nav>
+
+      {view === "route" ? (
+        <RoutePlanner from={selected} />
+      ) : (
+      <>
       <nav className="pivot">
         {pivot.map((s) => (
           <button key={s.ref} aria-current={s.ref === selected.ref} onClick={() => setSelected(s)}>
@@ -288,6 +237,8 @@ export default function App() {
       ))}
 
       <p className="status">{status}</p>
+      </>
+      )}
     </main>
   );
 }

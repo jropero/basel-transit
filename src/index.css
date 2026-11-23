@@ -53,3 +53,25 @@ button:disabled { opacity: 0.35; cursor: default; }
 .route li { padding: 3px 0; color: var(--muted); }
 
 .status { font-size: 13px; color: var(--muted); margin-top: 16px; }
+
+/* Top-level views pivot: departures | route */
+.views { display: flex; gap: 16px; margin-top: 4px; }
+.views button { font-size: 18px; text-transform: lowercase; color: var(--muted); }
+.views button[aria-current="true"] { color: var(--fg); }
+
+/* Route planner */
+.field { margin: 12px 0; }
+.field-label { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 4px 0 8px; }
+.chips button { font-size: 22px; font-weight: 300; text-transform: lowercase; color: var(--muted); }
+.chips button[aria-current="true"] { color: var(--fg); }
+.saved-route { flex: 1; text-align: left; font-size: 18px; font-weight: 300; text-transform: lowercase; }
+.trip { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.trip-head { margin: 0 0 8px; font-size: 22px; font-weight: 300; }
+.trip-head span { font-size: 15px; color: var(--muted); }
+.leg { display: flex; align-items: center; gap: 10px; margin: 6px 0; color: var(--muted); }
+.leg strong { color: var(--fg); font-weight: 400; }
+.leg .late { color: var(--late); }
+.walk { margin-left: 50px; font-style: italic; }
+.tile.sm { flex: 0 0 40px; height: 40px; }
+.tile.sm b { inset: 0; font-size: 18px; }
