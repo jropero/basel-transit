@@ -1,0 +1,33 @@
+{
+  "name": "basel-transit",
+  "version": "0.0.1",
+  "description": "Check trams and buses in Basel",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vp dev",
+    "build": "tsc && vp build",
+    "preview": "vp preview"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "typescript": "~7.0.2",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.23.0",
+      "onFail": "download"
+    }
+  },
+  "dependencies": {
+    "98.css": "^0.1.21",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
+}
