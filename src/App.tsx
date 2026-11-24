@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  access, all, envelope, escapeXml, headway, headwayApplies, hhmm, isOffline, knownNear, knownSearch, loadJson, loadStops,
-  metres, nearBody, ojp, ojpCached, parseStops, rememberDoc, rememberPlaces, replacement, sampleLabel, saveJson, saveStops,
-  searchBody, short, text, type Access, type Stop,
+  access, all, envelope, escapeXml, flags, headway, headwayApplies, hhmm, isOffline, knownNear, knownSearch, loadJson,
+  loadStops, metres, nearBody, ojp, ojpCached, parseSituations, parseStops, rememberDoc, rememberPlaces, replacement,
+  sampleLabel, saveJson, saveStops, searchBody, short, situationRefs, text, type Access, type Quay, type Situation, type Stop,
 } from "./ojp.ts";
-import AccessMark from "./Access.tsx";
+import AccessMark, { Diverted, QuayMark } from "./Access.tsx";
+import Alerts, { AlertMark } from "./Alerts.tsx";
+import RefreshBar, { REFRESH_MS } from "./RefreshBar.tsx";
 import RoutePlanner from "./Route.tsx";
 
 type Departure = {
@@ -12,7 +14,10 @@ type Departure = {
   dir: string;
   mode: string;
   to: string;
-  quay: string;
+  quay: Quay;
+  cancelled: boolean;
+  deviation: boolean;
+  alerts: string[];
   planned: Date;
   expected: Date;
   access: Access;
@@ -39,7 +44,8 @@ const parseDepartures = (doc: Document): Departure[] =>
       dir: text(ev, "DirectionRef"),
       mode: text(ev, "PtMode"),
       to: text(ev, "DestinationText"),
-      quay: text(ev, "PlannedQuay"),
+      ...flags(ev, here),
+      alerts: situationRefs(ev),
       planned: new Date(planned),
       expected: new Date(text(ev, "EstimatedTime") || planned),
       access: access(ev, here),
@@ -132,6 +138,9 @@ export default function App() {
   const [results, setResults] = useState<(Stop & { dist?: number })[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [onward, setOnward] = useState<Record<string, OnwardGroup> | null>(null);
+  const [situations, setSituations] = useState<Situation[]>([]);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
   const [offline, setOffline] = useState<Date | null>(null);
   const current = useRef(selected.ref);
   current.current = selected.ref;
@@ -145,10 +154,12 @@ export default function App() {
 
   async function load() {
     setStatus("Loading…");
+    setLoading(true);
     const ref = selected.ref;
     try {
       const { doc, offlineSince } = await ojpCached(`deps:${ref}`, departuresBody(ref));
       setDeps(parseDepartures(doc));
+      setSituations(parseSituations(doc));
       setOffline(offlineSince);
       setOnward(loadOnward(ref, offlineSince !== null));
       setStatus(offlineSince ? `offline · from ${hhmm(offlineSince)}` : `updated ${hhmm(new Date())}`);
@@ -160,6 +171,9 @@ export default function App() {
       }
     } catch (err) {
       setStatus(String(err));
+    } finally {
+      setLoading(false);
+      setLoadedAt(Date.now());
     }
   }
 
@@ -169,14 +183,13 @@ export default function App() {
     load();
   }, [selected.ref]);
 
-  // Auto-refresh every 30s while departures are visible; skip when the app is in the background.
+  // Refresh 30s after the last load (manual or automatic) so the top-edge bar never drifts;
+  // in the background just re-arm the timer.
   useEffect(() => {
-    if (view !== "departures") return;
-    const id = setInterval(() => {
-      if (!document.hidden) void load();
-    }, 30_000);
-    return () => clearInterval(id);
-  }, [selected.ref, view]);
+    if (view !== "departures" || loadedAt === null) return;
+    const id = setTimeout(() => (document.hidden ? setLoadedAt(Date.now()) : void load()), REFRESH_MS);
+    return () => clearTimeout(id);
+  }, [loadedAt, view, selected.ref]);
 
   // Back online: refresh immediately instead of waiting for the next 30s tick.
   useEffect(() => {
@@ -267,6 +280,7 @@ export default function App() {
         <RoutePlanner from={selected} />
       ) : (
       <>
+      <RefreshBar at={loadedAt} loading={loading} />
       <nav className="pivot">
         {pivot.map((s) => (
           <button key={s.ref} aria-current={s.ref === selected.ref} onClick={() => setSelected(s)}>
@@ -321,6 +335,8 @@ export default function App() {
         </>
       )}
 
+      <Alerts situations={situations} ids={deps.flatMap((d) => d.alerts)} />
+
       {groups.map(([key, list]) => {
         const g = onward?.[key];
         const head = list[0] ?? g!;
@@ -329,7 +345,7 @@ export default function App() {
             ? `usually every ~${g.headway} min (as of ${sampleLabel(new Date(g.measuredAt))})`
             : null
           : (() => {
-              const h = headway(list.map((d) => d.planned.getTime() / 60000)) ?? g?.headway;
+              const h = headway(list.filter((d) => !d.cancelled).map((d) => d.planned.getTime() / 60000)) ?? g?.headway;
               return h ? `every ~${h} min` : null;
             })();
         return (
@@ -340,19 +356,23 @@ export default function App() {
               <small>{head.mode}</small>
             </span>
             <span className="deps">
-              <span className="dest">{head.to}</span>
+              <span className="dest">
+                {head.to}
+                <AlertMark on={list.some((d) => d.alerts.length > 0)} />
+              </span>
               {every && <span className="headway">{every}</span>}
               {list.length === 0 && <span className="headway">no cached departures</span>}
               {list.map((d, i) => {
                 const delay = Math.round((d.expected.getTime() - d.planned.getTime()) / 60000);
                 const left = Math.max(0, Math.floor((d.expected.getTime() - now) / 60000));
                 return (
-                  <span className="dep" key={i}>
-                    <span>{hhmm(d.planned)}</span>
+                  <span className={d.cancelled ? "dep cancelled" : "dep"} key={i}>
+                    <span className="time">{hhmm(d.planned)}</span>
                     <AccessMark level={d.access} replacement={d.replacement} />
-                    {delay > 0 && <span className="late">+{delay}'</span>}
-                    <span className="via">{d.to !== list[0].to ? d.to : d.quay && `quay ${d.quay}`}</span>
-                    <span className="left">{left === 0 ? "now" : `${left} min`}</span>
+                    {delay > 0 && !d.cancelled && <span className="late">+{delay}'</span>}
+                    <Diverted on={d.deviation} />
+                    <span className="via">{d.to !== list[0].to ? d.to : <QuayMark quay={d.quay} />}</span>
+                    {d.cancelled ? <span className="tag bad">cancelled</span> : <span className="left">{left === 0 ? "now" : `${left} min`}</span>}
                   </span>
                 );
               })}

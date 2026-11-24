@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
-import AccessMark from "./Access.tsx";
+import AccessMark, { Diverted, QuayMark } from "./Access.tsx";
+import Alerts, { AlertMark } from "./Alerts.tsx";
+import RefreshBar, { REFRESH_MS } from "./RefreshBar.tsx";
 import {
   hhmm,
   isOffline,
@@ -8,6 +10,7 @@ import {
   loadStops,
   ojp,
   ojpCached,
+  parseSituations,
   parseStops,
   parseTrips,
   rememberDoc,
@@ -17,6 +20,7 @@ import {
   short,
   tripBody,
   type Route,
+  type Situation,
   type Stop,
   type Trip,
 } from "./ojp.ts";
@@ -33,12 +37,16 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [active, setActive] = useState<Route | null>(null);
   const [status, setStatus] = useState("");
+  const [situations, setSituations] = useState<Situation[]>([]);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
   const [openLeg, setOpenLeg] = useState<string | null>(null);
 
   async function plan(from: Stop | null, to: Stop | null) {
     if (!from || !to) return;
     setActive({ from, to });
     setStatus("planning…");
+    setLoading(true);
     try {
       const { doc, offlineSince } = await ojpCached(`trip:${from.ref}>${to.ref}`, tripBody(from, to));
       rememberDoc(doc);
@@ -46,6 +54,7 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
       // Offline the cached connections include ones that have already left.
       if (offlineSince) found = found.filter((t) => t.start.getTime() > Date.now());
       setTrips(found);
+      setSituations(parseSituations(doc));
       setStatus(
         offlineSince
           ? found.length ? `offline · from ${hhmm(offlineSince)}` : "offline · no cached connections left"
@@ -53,17 +62,18 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
       );
     } catch (err) {
       setStatus(String(err));
+    } finally {
+      setLoading(false);
+      setLoadedAt(Date.now());
     }
   }
 
-  // Auto-refresh the last planned route every 30s while this view is mounted and visible.
+  // Re-plan 30s after the last load (manual or automatic); in the background just re-arm the timer.
   useEffect(() => {
-    if (!active) return;
-    const id = setInterval(() => {
-      if (!document.hidden) void plan(active.from, active.to);
-    }, 30_000);
-    return () => clearInterval(id);
-  }, [active?.from.ref, active?.to.ref]);
+    if (!active || loadedAt === null) return;
+    const id = setTimeout(() => (document.hidden ? setLoadedAt(Date.now()) : void plan(active.from, active.to)), REFRESH_MS);
+    return () => clearTimeout(id);
+  }, [loadedAt, active?.from.ref, active?.to.ref]);
 
   // Back online: re-plan immediately instead of waiting for the next 30s tick.
   useEffect(() => {
@@ -105,6 +115,7 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
 
   return (
     <>
+      {active && <RefreshBar at={loadedAt} loading={loading} />}
       {routes.length > 0 && (
         <ul className="results">
           {routes.map((r) => (
@@ -181,10 +192,14 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
         </button>
       </div>
 
+      <Alerts situations={situations} ids={trips.flatMap((t) => t.alerts)} />
+
       {trips.map((t, i) => (
         <section key={i} className="trip">
           <p className="trip-head">
             {hhmm(t.start)} → {hhmm(t.end)}
+            <AlertMark on={t.alerts.length > 0} />
+            {t.legs.some((l) => l.kind === "ride" && l.cancelled) && <span className="tag bad">⚠ cancelled leg</span>}
             <span>
               {" "}· {t.minutes} min · {t.transfers === 0 ? "direct" : `${t.transfers} change${t.transfers > 1 ? "s" : ""}`}
             </span>
@@ -195,7 +210,7 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
             ) : (
               <Fragment key={j}>
                 <button
-                  className="leg"
+                  className={l.cancelled ? "leg cancelled" : "leg"}
                   aria-expanded={openLeg === `${i}-${j}`}
                   onClick={() => setOpenLeg(openLeg === `${i}-${j}` ? null : `${i}-${j}`)}
                 >
@@ -205,8 +220,10 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
                   <span>
                     {short(l.from)} <strong>{hhmm(l.fromTime)}</strong>
                     <AccessMark level={l.access} replacement={l.replacement} />
-                    {l.delay > 0 && <span className="late"> +{l.delay}'</span>}
-                    {l.quay && ` · quay ${l.quay}`}
+                    {l.delay > 0 && !l.cancelled && <span className="late"> +{l.delay}'</span>}
+                    <Diverted on={l.deviation} />
+                    {l.cancelled && <span className="tag bad">cancelled</span>}
+                    {l.quay.planned && <> · <QuayMark quay={l.quay} /></>}
                     <br />→ {short(l.alight)} {hhmm(l.alightTime)}
                   </span>
                 </button>

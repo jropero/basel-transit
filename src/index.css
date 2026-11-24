@@ -81,3 +81,29 @@ button:disabled { opacity: 0.35; cursor: default; }
 .acc { color: var(--fg); margin-left: 2px; font-family: "Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols 2", sans-serif; font-variant-emoji: text; }
 .acc.part { color: var(--muted); }
 .repl { margin-left: 6px; padding: 0 4px; font-size: 11px; color: #000; background: var(--late); text-transform: lowercase; }
+
+/* Metro refresh progress: thin bar at the top edge, counting down to the next refresh; flying dots while loading */
+.refresh { position: fixed; top: env(safe-area-inset-top, 0); left: 0; right: 0; height: 3px; overflow: hidden; z-index: 10; pointer-events: none; }
+.refresh span { display: block; height: 100%; background: var(--accent); transform-origin: left; animation: wp-fill linear forwards; }
+.refresh i { position: absolute; top: 0; left: 0; width: 6px; height: 3px; background: var(--accent); opacity: 0; animation: wp-dot 2.4s cubic-bezier(.2, .8, .8, .2) infinite; }
+@keyframes wp-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes wp-dot { 0% { transform: translateX(-10px); opacity: 1; } 85% { opacity: 1; } 100% { transform: translateX(100vw); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .refresh span, .refresh i { animation: none; }
+  .refresh span { transform: none; opacity: 0.4; }
+  .refresh i { left: 0; width: 100%; opacity: 0.4; }
+}
+
+/* Service alerts, cancellations, platform changes */
+.alert { border-left: 4px solid var(--late); padding: 4px 0 4px 10px; margin: 0 0 10px; }
+.alert button { text-align: left; width: 100%; }
+.alert p { margin: 6px 0 0; font-size: 14px; color: var(--muted); white-space: pre-line; }
+.warn-mark { color: var(--late); margin-left: 8px; font-size: 16px; }
+.tag { margin-left: 6px; padding: 0 4px; font-size: 11px; text-transform: lowercase; white-space: nowrap; }
+.tag.warn { color: #000; background: var(--late); }
+.tag.bad { color: #fff; background: #e51400; }
+.dep .tag.bad { margin-left: auto; }
+.cancelled .time, .cancelled .left { text-decoration: line-through; color: var(--muted); }
+.leg.cancelled strong { text-decoration: line-through; color: var(--muted); }
+.quay-old { color: var(--muted); }
+.quay-new { color: var(--late); font-weight: 700; }

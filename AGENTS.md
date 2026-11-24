@@ -9,9 +9,11 @@ Basel tram/bus departures and route planner. React 19 + TypeScript on Vite+ (`vp
 - Package manager: pnpm (`vp add`, `vp remove`)
 
 ## Layout
-- `src/ojp.ts`: everything shared. Request builders (`envelope`, `searchBody`, `nearBody`, `tripBody`), `ojp()` fetch, XML helpers (`text`, `all`), parsers (`parseStops`, `parseTrips`), localStorage helpers (`loadJson` / `saveJson`, `loadStops`, `loadRoutes`), formatting (`hhmm`, `short`). Put new shared logic here.
-- `src/App.tsx`: departures view. Saved-stop pivot, search, near me, groups by line + `DirectionRef`, onward stops (cached 24h), 30s auto-refresh.
+- `src/ojp.ts`: everything shared. Request builders (`envelope`, `searchBody`, `nearBody`, `tripBody`), `ojp()` fetch, XML helpers (`text`, `all`), parsers (`parseStops`, `parseTrips`), localStorage helpers (`loadJson` / `saveJson`, `loadStops`, `loadRoutes`), formatting (`hhmm`, `short`). Also `ojpCached` (last-known XML for offline), situations and flags parsing, the known-stops directory and headways. Put new shared logic here.
+- `src/App.tsx`: departures view. Saved-stop pivot, search, near me, groups by line + `DirectionRef`, onward stops (prefetched, cached 7 days), alerts, 30s auto-refresh.
 - `src/Route.tsx`: route view (`OJPTripRequest`). From/to, saved routes, 30s auto-refresh.
+- `src/RefreshBar.tsx`: Metro countdown bar and loading dots. `src/Alerts.tsx`: alert banner and ⚠ mark. `src/Access.tsx`: ♿, replacement, quay-change and diverted marks.
+- `public/sw.js`: service worker for the offline app shell (production only).
 - `src/index.css`: the only stylesheet, plain CSS with tokens on `:root`. Always dark. No CSS framework: don't add one.
 - `public/`: PWA manifest and icons. Paths are absolute `/b/...`.
 
@@ -21,7 +23,8 @@ Basel tram/bus departures and route planner. React 19 + TypeScript on Vite+ (`vp
 - **Production:** `ojp()` calls the API directly, with the token inlined at build time (see README).
 - Parse with `text(el, localName)` / `all(el, localName)`. They're namespace-agnostic (`siri:` vs default namespace) and return the **first** descendant, so scope to the right element. In a `StopEvent`, `ThisCall` comes before `OnwardCall`.
 - Times are UTC ISO strings. Display them with `hhmm()` (de-CH).
-- Stop IDs are SLOIDs, e.g. Burgfelderplatz `ch:1:sloid:89303`. `ch:1:sloid:10` is the Basel SBB *train* station, not the tram stop.
+- Stop IDs are SLOIDs, e.g. Burgfelderplatz `ch:1:sloid:89303`. `ch:1:sloid:10` is the Basel SBB *train* station, not the tram stop; the tram stop "Basel, Bahnhof SBB" is `ch:1:sloid:78143`.
+- English alert text comes from `siri:ServiceRequestContext/siri:Language` as the first child of `siri:ServiceRequest` (set by `envelope()` via `LANG`). `Params/Language` has no effect. Alerts (`PtSituation`) sit in the response context; `Service/SituationFullRefs/SituationFullRef/SituationNumber` in each `StopEvent` / `TimedLeg` points at them. `Cancelled` and `Deviation` sit in `Service`; `EstimatedQuay` next to `PlannedQuay` in the call.
 - **Before relying on a response shape, check it live:** with the dev server running, `curl -X POST localhost:5173/ojp -H 'Content-Type: application/xml' --data-binary '<OJP …>'`.
 
 ## Rules

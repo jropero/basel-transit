@@ -3,9 +3,13 @@
 export type Stop = { ref: string; name: string; lat?: number; lon?: number };
 export type Route = { from: Stop; to: Stop };
 
+// Alert texts come back in this language (operator-provided). Must sit in siri:ServiceRequestContext; Params/Language has no effect.
+const LANG = "en";
+
 export const envelope = (inner: string) => `<?xml version="1.0" encoding="UTF-8"?>
 <OJP xmlns="http://www.vdv.de/ojp" xmlns:siri="http://www.siri.org.uk/siri" version="2.0">
   <OJPRequest><siri:ServiceRequest>
+    <siri:ServiceRequestContext><siri:Language>${LANG}</siri:Language></siri:ServiceRequestContext>
     <siri:RequestTimestamp>${new Date().toISOString()}</siri:RequestTimestamp>
     <siri:RequestorRef>basel-transit</siri:RequestorRef>
     ${inner}
@@ -214,6 +218,39 @@ export const replacement = (at: Element) => text(at, "NameSuffix") === "ALTERNAT
   );
 }
 
+// Realtime flags of one departure/leg. `el` holds Service (Cancelled, Deviation); `at` is the ThisCall / LegBoard.
+export type Quay = { planned: string; actual: string };
+export function flags(el: Element, at: Element) {
+  const service = all(el, "Service")[0] ?? el;
+  const planned = text(at, "PlannedQuay");
+  return {
+    cancelled: text(service, "Cancelled") === "true" || text(at, "NotServicedStop") === "true",
+    deviation: text(service, "Deviation") === "true",
+    quay: { planned, actual: text(at, "EstimatedQuay") || planned } as Quay,
+  };
+}
+
+// Service alerts. PtSituation sits in the response context; StopEvent/TimedLeg Service/SituationFullRefs point at it.
+// The context has one SituationNumber for the situation (suffix "-0") and one related ref without it: match on either.
+export type Situation = { id: string[]; summary: string; details: string[]; severity: string; until?: Date };
+
+export const parseSituations = (doc: Document): Situation[] =>
+  all(doc, "PtSituation").map((s) => {
+    const until = text(s, "EndTime");
+    return {
+      id: all(s, "SituationNumber").map((n) => n.textContent?.trim() ?? ""),
+      summary: text(s, "SummaryText"),
+      details: ["ReasonText", "DescriptionText", "ConsequenceText", "RecommendationText", "DurationText"]
+        .map((t) => text(s, t))
+        .filter(Boolean),
+      severity: text(s, "Severity"),
+      until: until ? new Date(until) : undefined,
+    };
+  });
+
+export const situationRefs = (el: Element): string[] =>
+  all(el, "SituationFullRef").map((r) => text(r, "SituationNumber")).filter(Boolean);
+
 export type Leg =
   | {
       kind: "ride";
@@ -222,7 +259,9 @@ export type Leg =
       to: string;
       from: string;
       fromTime: Date;
-      quay: string;
+      quay: Quay;
+      cancelled: boolean;
+      deviation: boolean;
       alight: string;
       alightTime: Date;
       delay: number;
@@ -232,7 +271,7 @@ export type Leg =
     }
   | { kind: "walk"; minutes: number };
 
-export type Trip = { start: Date; end: Date; minutes: number; transfers: number; legs: Leg[] };
+export type Trip = { start: Date; end: Date; minutes: number; transfers: number; legs: Leg[]; alerts: string[] };
 
 // "PT1H14M24S" -> 74 (seconds dropped).
 export const isoMinutes = (d: string) => {
@@ -260,7 +299,7 @@ function parseLeg(leg: Element): Leg | null {
       to: text(timed, "DestinationText"),
       from: text(board, "StopPointName"),
       fromTime: dep.expected,
-      quay: text(board, "PlannedQuay"),
+      ...flags(timed, board),
       alight: text(alight, "StopPointName"),
       alightTime: time(alight).expected,
       delay: Math.round((dep.expected.getTime() - dep.planned.getTime()) / 60000),
@@ -280,7 +319,25 @@ export const parseTrips = (doc: Document): Trip[] =>
     minutes: isoMinutes(text(t, "Duration")),
     transfers: Number(text(t, "Transfers") || 0),
     legs: all(t, "Leg").map(parseLeg).filter((l): l is Leg => l !== null),
+    alerts: situationRefs(t),
   }));
+
+if (typeof DOMParser !== "undefined") {
+  const d = parseXml(
+    `<R xmlns="x"><PtSituation><SituationNumber>a-0</SituationNumber><References><SituationNumber>a</SituationNumber></References>` +
+      `<SummaryText>S</SummaryText><ReasonText>R</ReasonText><DurationText>D</DurationText></PtSituation>` +
+      `<TimedLeg><Service><Cancelled>true</Cancelled><Deviation>true</Deviation><SituationFullRefs><SituationFullRef><SituationNumber>a-0</SituationNumber></SituationFullRef></SituationFullRefs></Service>` +
+      `<LegBoard><PlannedQuay><Text>5</Text></PlannedQuay><EstimatedQuay><Text>10</Text></EstimatedQuay></LegBoard></TimedLeg></R>`,
+  );
+  const sit = parseSituations(d)[0];
+  const tl = all(d, "TimedLeg")[0];
+  const f = flags(tl, all(tl, "LegBoard")[0]);
+  console.assert(
+    sit.id.length === 2 && sit.summary === "S" && sit.details.join() === "R,D" &&
+      situationRefs(tl)[0] === "a-0" && f.cancelled && f.deviation && f.quay.planned === "5" && f.quay.actual === "10",
+    "situations/flags",
+  );
+}
 
 export function loadJson<T>(key: string, fallback: T): T {
   try {
