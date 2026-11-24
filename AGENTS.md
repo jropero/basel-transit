@@ -1,0 +1,31 @@
+# AGENTS.md
+
+Basel tram/bus departures and route planner. React 19 + TypeScript on Vite+ (`vp`), installable PWA, Windows Phone "Metro" look. Data comes from the Swiss OJP 2.0 API (XML). For setup and deployment, see [README.md](README.md).
+
+## Commands
+- `vp dev`: dev server at http://localhost:5173/b/ (base is `/b/`)
+- `vp run build`: `tsc` type check + production build. Run it after every change; there is no test runner.
+- `vp check` / `vp lint` / `vp fmt`: Vite+ format, lint and type checks
+- Package manager: pnpm (`vp add`, `vp remove`)
+
+## Layout
+- `src/ojp.ts`: everything shared. Request builders (`envelope`, `searchBody`, `nearBody`, `tripBody`), `ojp()` fetch, XML helpers (`text`, `all`), parsers (`parseStops`, `parseTrips`), localStorage helpers (`loadJson` / `saveJson`, `loadStops`, `loadRoutes`), formatting (`hhmm`, `short`). Put new shared logic here.
+- `src/App.tsx`: departures view. Saved-stop pivot, search, near me, groups by line + `DirectionRef`, onward stops (cached 24h), 30s auto-refresh.
+- `src/Route.tsx`: route view (`OJPTripRequest`). From/to, saved routes, 30s auto-refresh.
+- `src/index.css`: the only stylesheet, plain CSS with tokens on `:root`. Always dark. No CSS framework: don't add one.
+- `public/`: PWA manifest and icons. Paths are absolute `/b/...`.
+
+## OJP API notes
+- Every request is a POST of an XML body built with `envelope()`. Escape user input with `escapeXml`.
+- **Dev:** `ojp()` posts to `/ojp`, and the Vite proxy adds `Authorization: Bearer $OJP_TOKEN`. The proxy path is `/ojp`, **not** `/b/ojp`.
+- **Production:** `ojp()` calls the API directly, with the token inlined at build time (see README).
+- Parse with `text(el, localName)` / `all(el, localName)`. They're namespace-agnostic (`siri:` vs default namespace) and return the **first** descendant, so scope to the right element. In a `StopEvent`, `ThisCall` comes before `OnwardCall`.
+- Times are UTC ISO strings. Display them with `hhmm()` (de-CH).
+- Stop IDs are SLOIDs, e.g. Burgfelderplatz `ch:1:sloid:89303`. `ch:1:sloid:10` is the Basel SBB *train* station, not the tram stop.
+- **Before relying on a response shape, check it live:** with the dev server running, `curl -X POST localhost:5173/ojp -H 'Content-Type: application/xml' --data-binary '<OJP …>'`.
+
+## Rules
+- Never read, print or commit `.env`; it holds `OJP_TOKEN`.
+- Wrap localStorage access in try/catch (use `loadJson` / `saveJson`). Keys are prefixed `basel-transit:`.
+- Keep it small: no new dependencies for things a few lines can do. New parsing or maths logic gets an inline `console.assert` self-check (see `isoMinutes`, `metres`).
+- Interactive elements are real `<button>`s with `aria-*` state. Don't put `<div>`s inside buttons; use `<span>`.

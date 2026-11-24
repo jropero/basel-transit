@@ -75,3 +75,4 @@ button:disabled { opacity: 0.35; cursor: default; }
 .walk { margin-left: 50px; font-style: italic; }
 .tile.sm { flex: 0 0 40px; height: 40px; }
 .tile.sm b { inset: 0; font-size: 18px; }
+.results li .dist { color: var(--muted); font-size: 14px; }

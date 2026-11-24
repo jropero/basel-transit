@@ -1,6 +1,16 @@
 # basel-transit
 
-Check trams and buses in Basel.
+Check trams and buses in Basel. It's a small React + TypeScript PWA on [Vite+](https://viteplus.dev), with a Windows Phone "Metro" look. It uses the Swiss [OJP 2.0 API](https://opentransportdata.swiss).
+
+## Features
+
+- **Departures:** the next departures for a stop, grouped by line and direction, showing quay, delay and minutes left. Tap a line to see its next stops; these are cached in localStorage for 24h.
+- **Saved stops:** Burgfelderplatz is preset. Add stops by name search or with **near me**, which lists stops within 500 m using your location.
+- **Route planner:** plan a trip from one stop to another, with changes, walks and delays shown. Save routes for one-tap reuse.
+- **Auto-refresh:** departures and the open route refresh every 30s while visible.
+- **Installable:** works as an installable PWA ("Add to Home Screen"), always in dark mode.
+
+Notes for coding agents (layout, OJP API quirks, rules) are in [AGENTS.md](AGENTS.md).
 
 ## Development
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { all, envelope, escapeXml, hhmm, loadStops, ojp, parseStops, saveStops, searchBody, short, text, type Stop } from "./ojp.ts";
+import { all, envelope, escapeXml, hhmm, loadStops, metres, nearBody, ojp, parseStops, saveStops, searchBody, short, text, type Stop } from "./ojp.ts";
 import RoutePlanner from "./Route.tsx";
 
 type Departure = {
@@ -87,7 +87,7 @@ export default function App() {
   const [deps, setDeps] = useState<Departure[]>([]);
   const [status, setStatus] = useState("Loading…");
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Stop[]>([]);
+  const [results, setResults] = useState<(Stop & { dist?: number })[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [onward, setOnward] = useState<Record<string, string[]> | null>(null);
   const [showSearch, setShowSearch] = useState(false);
@@ -112,6 +112,39 @@ export default function App() {
     setOpen(null);
     load();
   }, [selected.ref]);
+
+  // Auto-refresh every 30s while departures are visible; skip when the app is in the background.
+  useEffect(() => {
+    if (view !== "departures") return;
+    const id = setInterval(() => {
+      if (!document.hidden) void load();
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [selected.ref, view]);
+
+  function nearMe() {
+    if (!navigator.geolocation) return setStatus("location not available in this browser");
+    setStatus("locating…");
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        const here = { lat: coords.latitude, lon: coords.longitude };
+        try {
+          let found = parseStops(await ojp(nearBody(here.lat, here.lon)));
+          if (!found.length) found = parseStops(await ojp(nearBody(here.lat, here.lon, 1000)));
+          const withDist = found
+            .map((s) => ({ ...s, dist: s.lat && s.lon ? metres(here, { lat: s.lat, lon: s.lon }) : undefined }))
+            .sort((a, b) => (a.dist ?? Infinity) - (b.dist ?? Infinity));
+          setResults(withDist);
+          setShowSearch(true);
+          setStatus(withDist.length ? `${withDist.length} stops nearby` : "no stops within 1 km");
+        } catch (err) {
+          setStatus(String(err));
+        }
+      },
+      (err) => setStatus(`location: ${err.message}`),
+      { enableHighAccuracy: true, timeout: 10_000 },
+    );
+  }
 
   async function toggle(key: string) {
     if (open === key) return setOpen(null);
@@ -177,6 +210,7 @@ export default function App() {
           ✕ remove
         </button>
         <button aria-expanded={showSearch} onClick={() => setShowSearch(!showSearch)}>⌕ search</button>
+        <button onClick={nearMe}>◎ near me</button>
       </div>
 
       {showSearch && (
@@ -195,9 +229,12 @@ export default function App() {
             <ul className="results">
               {results.map((s) => (
                 <li key={s.ref}>
-                  <span>{s.name}</span>
+                  <span>
+                    {s.name}
+                    {s.dist !== undefined && <span className="dist"> {s.dist} m</span>}
+                  </span>
                   <button className="btn" onClick={() => { setSelected(s); setResults([]); setShowSearch(false); }}>show</button>
-                  <button className="btn" disabled={isSaved(s)} onClick={() => updateStops([...stops, s])}>save</button>
+                  <button className="btn" disabled={isSaved(s)} onClick={() => updateStops([...stops, { ref: s.ref, name: s.name }])}>save</button>
                 </li>
               ))}
             </ul>

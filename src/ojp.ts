@@ -1,6 +1,6 @@
 // Shared OJP 2.0 helpers: request envelope, fetch through the /ojp dev proxy, XML parsing, storage.
 
-export type Stop = { ref: string; name: string };
+export type Stop = { ref: string; name: string; lat?: number; lon?: number };
 export type Route = { from: Stop; to: Stop };
 
 export const envelope = (inner: string) => `<?xml version="1.0" encoding="UTF-8"?>
@@ -14,12 +14,20 @@ export const envelope = (inner: string) => `<?xml version="1.0" encoding="UTF-8"
 
 export const escapeXml = (s: string) => s.replace(/[<>&'"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
-export const searchBody = (name: string) =>
+const locationBody = (initialInput: string) =>
   envelope(`<OJPLocationInformationRequest>
       <siri:RequestTimestamp>${new Date().toISOString()}</siri:RequestTimestamp>
-      <InitialInput><Name>${escapeXml(name)}</Name></InitialInput>
+      <InitialInput>${initialInput}</InitialInput>
       <Restrictions><Type>stop</Type><NumberOfResults>10</NumberOfResults></Restrictions>
     </OJPLocationInformationRequest>`);
+
+export const searchBody = (name: string) => locationBody(`<Name>${escapeXml(name)}</Name>`);
+
+export const nearBody = (lat: number, lon: number, radius = 500) =>
+  locationBody(`<GeoRestriction><Circle>
+        <Center><siri:Longitude>${lon}</siri:Longitude><siri:Latitude>${lat}</siri:Latitude></Center>
+        <Radius>${radius}</Radius>
+      </Circle></GeoRestriction>`);
 
 export const tripBody = (from: Stop, to: Stop) =>
   envelope(`<OJPTripRequest>
@@ -59,8 +67,25 @@ export const all = (el: Element | Document, tag: string) => [...el.getElementsBy
 
 export const parseStops = (doc: Document): Stop[] =>
   all(doc, "PlaceResult")
-    .map((p) => ({ ref: text(p, "StopPlaceRef"), name: text(p, "StopPlaceName") }))
+    .map((p) => ({
+      ref: text(p, "StopPlaceRef"),
+      name: text(p, "StopPlaceName"),
+      lat: Number(text(p, "Latitude")) || undefined,
+      lon: Number(text(p, "Longitude")) || undefined,
+    }))
     .filter((s) => s.ref);
+
+// Equirectangular approximation: fine at city scale.
+export const metres = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) => {
+  const k = 111_320;
+  const x = (b.lon - a.lon) * k * Math.cos(((a.lat + b.lat) / 2) * (Math.PI / 180));
+  return Math.round(Math.hypot(x, (b.lat - a.lat) * k));
+};
+// Basel SBB <-> Burgfelderplatz is roughly 2 km.
+console.assert(
+  Math.abs(metres({ lat: 47.54741, lon: 7.58956 }, { lat: 47.56204, lon: 7.57382 }) - 2000) < 100,
+  "metres",
+);
 
 export type Leg =
   | {

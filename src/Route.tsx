@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   hhmm,
   loadRoutes,
@@ -25,10 +25,12 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Stop[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
+  const [active, setActive] = useState<Route | null>(null);
   const [status, setStatus] = useState("");
 
   async function plan(from: Stop | null, to: Stop | null) {
     if (!from || !to) return;
+    setActive({ from, to });
     setStatus("planning…");
     try {
       const found = parseTrips(await ojp(tripBody(from, to)));
@@ -38,6 +40,15 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
       setStatus(String(err));
     }
   }
+
+  // Auto-refresh the last planned route every 30s while this view is mounted and visible.
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => {
+      if (!document.hidden) void plan(active.from, active.to);
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [active?.from.ref, active?.to.ref]);
 
   async function search(e: React.FormEvent) {
     e.preventDefault();
