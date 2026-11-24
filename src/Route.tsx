@@ -88,7 +88,7 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
     }
   }, []);
 
-  // Re-plan 30s after the last load (manual or automatic); in the background just re-arm the timer.
+  // Re-plan 15s after the last load (manual or automatic); in the background just re-arm the timer.
   useEffect(() => {
     if (!activeFrom || !activeTo || loadedAt === null) return;
     const id = setTimeout(
@@ -98,7 +98,7 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
     return () => clearTimeout(id);
   }, [loadedAt, activeFrom, activeTo, plan]);
 
-  // Back online: re-plan immediately instead of waiting for the next 30s tick.
+  // Back online: re-plan immediately instead of waiting for the next tick.
   useEffect(() => {
     if (!activeFrom || !activeTo) return;
     const on = () => void plan(activeFrom, activeTo);

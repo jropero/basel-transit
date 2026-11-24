@@ -184,7 +184,7 @@ function everyLabel(
   return h ? `every ~${h} min` : null;
 }
 
-// Wall clock for countdowns, ticking independently of the 30s data refresh.
+// Wall clock for countdowns, ticking independently of the 15s data refresh.
 function useNow(tickMs = 10_000) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -340,7 +340,7 @@ function SearchPanel({
   );
 }
 
-// Departures for one stop: loads on stop change, refreshes 30s after each load and when back online.
+// Departures for one stop: loads on stop change, refreshes 15s after each load and when back online.
 function useDepartures(ref: string, active: boolean) {
   const [deps, setDeps] = useState<Departure[]>([]);
   const [status, setStatus] = useState('Loading…');
@@ -382,7 +382,7 @@ function useDepartures(ref: string, active: boolean) {
     void load();
   }, [load]);
 
-  // Refresh 30s after the last load (manual or automatic) so the top-edge bar never drifts;
+  // Refresh 15s after the last load (manual or automatic) so the top-edge bar never drifts;
   // in the background just re-arm the timer.
   useEffect(() => {
     if (!active || loadedAt === null) return;
@@ -393,7 +393,7 @@ function useDepartures(ref: string, active: boolean) {
     return () => clearTimeout(id);
   }, [loadedAt, active, load]);
 
-  // Back online: refresh immediately instead of waiting for the next 30s tick.
+  // Back online: refresh immediately instead of waiting for the next tick.
   useEffect(() => {
     if (!active) return;
     const on = () => void load();

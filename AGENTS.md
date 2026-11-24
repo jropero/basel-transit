@@ -16,8 +16,8 @@ Basel tram/bus departures and route planner. React 19 + TypeScript on Vite+ (`vp
 ## Layout
 
 - `src/ojp.ts`: everything shared. Request builders (`envelope`, `searchBody`, `nearBody`, `tripBody`), `ojp()` fetch, XML helpers (`text`, `all`), parsers (`parseStops`, `parseTrips`), localStorage helpers (`loadJson` / `saveJson`, `loadStops`, `loadRoutes`), formatting (`hhmm`, `short`). Also `ojpCached` (last-known XML for offline), situations and flags parsing, the known-stops directory and headways. Put new shared logic here.
-- `src/App.tsx`: departures view. Saved-stop pivot, search, near me, groups by line + `DirectionRef`, onward stops (prefetched, cached 7 days), alerts, 30s auto-refresh.
-- `src/Route.tsx`: route view (`OJPTripRequest`). From/to, saved routes, 30s auto-refresh.
+- `src/App.tsx`: departures view. Saved-stop pivot, search, near me, groups by line + `DirectionRef`, onward stops (prefetched, cached 7 days), alerts, 15s auto-refresh.
+- `src/Route.tsx`: route view (`OJPTripRequest`). From/to, saved routes, 15s auto-refresh.
 - `src/RefreshBar.tsx`: Metro countdown bar and loading dots. `src/Alerts.tsx`: alert banner and ⚠ mark. `src/Access.tsx`: ♿, replacement, quay-change and diverted marks.
 - `public/sw.js`: service worker for the offline app shell (production only).
 - `src/index.css`: the only stylesheet, plain CSS with tokens on `:root`. Always dark. No CSS framework: don't add one.

@@ -9,7 +9,7 @@ Check trams and buses in Basel. It's a small React + TypeScript PWA on [Vite+](h
 - **Service alerts:** disruption notices for trams, buses and trains, in English and supplied by the operator. They appear as a banner and as a ⚠ on affected lines. Cancelled departures are struck through, diverted ones are tagged, and platform changes show as old → new.
 - **Saved stops:** Burgfelderplatz is preset. Add stops by name search or with **near me**, which lists stops within 500 m using your location.
 - **Route planner:** plan a trip from one stop to another, with changes, walks, delays and intermediate stops. Save routes for one-tap reuse.
-- **Auto-refresh:** departures and the open route refresh every 30s while visible. A thin Metro-style bar at the top counts down, and dots fly across while it loads.
+- **Auto-refresh:** departures and the open route refresh every 15s while visible. A thin Metro-style bar at the top counts down, and dots fly across while it loads.
 - **Offline:** the installed PWA opens offline and shows the last-known departures, trips, line stops and alerts, hiding anything that has already left. Search and near me use the stops seen so far.
 - **Installable:** works as an installable PWA ("Add to Home Screen"), always in dark mode.
 
