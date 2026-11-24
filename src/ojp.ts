@@ -70,7 +70,7 @@ export const ojp = async (body: string): Promise<Document> => parseXml(await pos
 export const isOffline = (err: unknown) => err instanceof TypeError;
 
 // Online: fetch and remember the raw XML. No network: serve the last stored copy (offlineSince = when it was fetched).
-// shortcut: entries are never evicted; a full localStorage just stops caching.
+// shortcut: when storage is full, old entries are evicted oldest-first (see saveJson).
 export async function ojpCached(
   key: string,
   body: string,
@@ -450,11 +450,40 @@ export function loadJson<T>(key: string, fallback: T): T {
   }
 }
 
-export function saveJson(key: string, value: unknown) {
+const DISPOSABLE = ['basel-transit:cache:', 'basel-transit:onward'];
+
+/** Cache-like keys (JSON `{ at }`), oldest first; missing or unparseable `at` counts as 0. */
+function disposableKeysOldestFirst(): string[] {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    const keys: { key: string; at: number }[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !DISPOSABLE.some(p => key.startsWith(p))) continue;
+      keys.push({ key, at: Number(loadJson<{ at?: number }>(key, {}).at) || 0 });
+    }
+    return keys.sort((a, b) => a.at - b.at).map(k => k.key);
   } catch {
-    // Storage unavailable (private mode etc.): just won't persist.
+    return [];
+  }
+}
+
+export function saveJson(key: string, value: unknown) {
+  const json = JSON.stringify(value);
+  try {
+    localStorage.setItem(key, json);
+    return;
+  } catch {
+    // Full or unavailable: evict disposable entries below.
+  }
+  for (const old of disposableKeysOldestFirst()) {
+    if (old === key) continue;
+    try {
+      localStorage.removeItem(old);
+      localStorage.setItem(key, json);
+      return;
+    } catch {
+      // Still full (or unavailable): try the next one.
+    }
   }
 }
 

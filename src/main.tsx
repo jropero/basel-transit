@@ -7,6 +7,8 @@ import { registerTilt } from './motion.ts';
 // Before the first render, so the saved accent never flashes the default.
 applyAccent(loadAccent(), false);
 registerTilt();
+// Ask the browser not to evict our storage (saved stops and routes).
+void navigator.storage?.persist?.();
 
 createRoot(document.getElementById('root')!).render(<App />);
 
