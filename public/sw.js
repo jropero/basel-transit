@@ -1,0 +1,52 @@
+// Offline shell for /b/. Same-origin GETs only; the OJP API is never intercepted.
+// shortcut: old hashed assets linger until CACHE is bumped.
+const CACHE = "basel-transit-v1";
+const BASE = "/b/";
+const SHELL = ["", "index.html", "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png"].map((f) => BASE + f);
+
+self.addEventListener("install", (e) => {
+  e.waitUntil(
+    (async () => {
+      const cache = await caches.open(CACHE);
+      await cache.addAll(SHELL);
+      // Hashed bundle files are only named inside index.html.
+      const html = await (await cache.match(BASE + "index.html")).text();
+      await cache.addAll([...new Set(html.match(/\/b\/assets\/[^"')\s]+\.(?:js|css)/g) ?? [])]);
+      await self.skipWaiting();
+    })(),
+  );
+});
+
+self.addEventListener("activate", (e) => {
+  e.waitUntil(
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()),
+  );
+});
+
+self.addEventListener("fetch", (e) => {
+  const { request } = e;
+  const url = new URL(request.url);
+  if (request.method !== "GET" || url.origin !== location.origin || !url.pathname.startsWith(BASE)) return;
+  if (request.mode === "navigate") {
+    // Network first; the last good index.html when offline.
+    e.respondWith(
+      fetch(request)
+        .then((res) => {
+          if (res.ok) caches.open(CACHE).then((c) => c.put(BASE + "index.html", res.clone()));
+          return res;
+        })
+        .catch(() => caches.match(BASE + "index.html")),
+    );
+    return;
+  }
+  e.respondWith(
+    caches.match(request).then(
+      (hit) =>
+        hit ||
+        fetch(request).then((res) => {
+          if (res.ok) caches.open(CACHE).then((c) => c.put(request, res.clone()));
+          return res;
+        }),
+    ),
+  );
+});

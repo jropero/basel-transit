@@ -1,5 +1,10 @@
-import { useEffect, useState } from "react";
-import { all, envelope, escapeXml, hhmm, loadStops, metres, nearBody, ojp, parseStops, saveStops, searchBody, short, text, type Stop } from "./ojp.ts";
+import { useEffect, useRef, useState } from "react";
+import {
+  access, all, envelope, escapeXml, headway, headwayApplies, hhmm, isOffline, knownNear, knownSearch, loadJson, loadStops,
+  metres, nearBody, ojp, ojpCached, parseStops, rememberDoc, rememberPlaces, replacement, sampleLabel, saveJson, saveStops,
+  searchBody, short, text, type Access, type Stop,
+} from "./ojp.ts";
+import AccessMark from "./Access.tsx";
 import RoutePlanner from "./Route.tsx";
 
 type Departure = {
@@ -10,6 +15,8 @@ type Departure = {
   quay: string;
   planned: Date;
   expected: Date;
+  access: Access;
+  replacement: boolean;
 };
 
 const departuresBody = (ref: string, onward = false) =>
@@ -17,7 +24,7 @@ const departuresBody = (ref: string, onward = false) =>
       <siri:RequestTimestamp>${new Date().toISOString()}</siri:RequestTimestamp>
       <Location><PlaceRef><StopPlaceRef>${escapeXml(ref)}</StopPlaceRef></PlaceRef></Location>
       <Params>
-        <NumberOfResults>30</NumberOfResults>
+        <NumberOfResults>${onward ? 100 : 30}</NumberOfResults>
         <StopEventType>departure</StopEventType>${onward ? "\n        <IncludeOnwardCalls>true</IncludeOnwardCalls>" : ""}
         <IncludeRealtimeData>true</IncludeRealtimeData>
       </Params>
@@ -26,6 +33,7 @@ const departuresBody = (ref: string, onward = false) =>
 const parseDepartures = (doc: Document): Departure[] =>
   all(doc, "StopEvent").map((ev) => {
     const planned = text(ev, "TimetabledTime");
+    const here = all(ev, "ThisCall")[0];
     return {
       line: text(ev, "PublishedServiceName"),
       dir: text(ev, "DirectionRef"),
@@ -34,39 +42,73 @@ const parseDepartures = (doc: Document): Departure[] =>
       quay: text(ev, "PlannedQuay"),
       planned: new Date(planned),
       expected: new Date(text(ev, "EstimatedTime") || planned),
+      access: access(ev, here),
+      replacement: replacement(here),
     };
   });
 
 const groupKey = (d: { line: string; dir: string }) => `${d.line}|${d.dir}`;
 
+type OnwardGroup = {
+  line: string;
+  mode: string;
+  to: string;
+  stops: { name: string; min: number }[];
+  headway: number | null;
+  measuredAt: number; // median planned departure of the sample
+};
+
 // shortcut: first trip per line+direction wins, so short-turn trips may show a shorter/longer list.
-function parseOnward(doc: Document): Record<string, string[]> {
-  const groups: Record<string, string[]> = {};
+function parseOnward(doc: Document): Record<string, OnwardGroup> {
+  const groups: Record<string, OnwardGroup> = {};
+  const times: Record<string, number[]> = {};
   for (const ev of all(doc, "StopEvent")) {
-    const key = groupKey({ line: text(ev, "PublishedServiceName"), dir: text(ev, "DirectionRef") });
+    const line = text(ev, "PublishedServiceName");
+    const key = groupKey({ line, dir: text(ev, "DirectionRef") });
+    const base = new Date(text(all(ev, "ThisCall")[0], "TimetabledTime")).getTime();
+    (times[key] ??= []).push(base);
     if (groups[key]) continue;
-    groups[key] = [...ev.getElementsByTagNameNS("*", "OnwardCall")].map((c) => text(c, "StopPointName"));
+    const stops = all(ev, "OnwardCall").map((c) => {
+      const t = new Date(text(all(c, "ServiceDeparture")[0] ?? c, "TimetabledTime")).getTime();
+      return { name: text(c, "StopPointName"), min: Math.round((t - base) / 60000) };
+    });
+    groups[key] = { line, mode: text(ev, "PtMode"), to: text(ev, "DestinationText"), stops, headway: null, measuredAt: base };
+  }
+  for (const [key, ts] of Object.entries(times)) {
+    groups[key].headway = headway(ts.map((t) => t / 60000));
+    groups[key].measuredAt = [...ts].sort((a, b) => a - b)[ts.length >> 1];
   }
   return groups;
 }
 
-const ONWARD_TTL = 24 * 60 * 60 * 1000;
-const onwardKey = (ref: string) => `basel-transit:onward:${ref}`;
+const ONWARD_TTL = 7 * 24 * 60 * 60 * 1000;
+const onwardKey = (ref: string) => `basel-transit:onward2:${ref}`;
 
-function loadOnward(ref: string): Record<string, string[]> | null {
-  try {
-    const c = JSON.parse(localStorage.getItem(onwardKey(ref)) ?? "null");
-    return c && Date.now() - c.at < ONWARD_TTL ? c.groups : null;
-  } catch {
-    return null;
-  }
+// Offline, stale beats nothing: the TTL is ignored.
+function loadOnward(ref: string, offline: boolean): Record<string, OnwardGroup> | null {
+  const c = loadJson<{ at: number; groups: Record<string, OnwardGroup> } | null>(onwardKey(ref), null);
+  return c && (offline || Date.now() - c.at < ONWARD_TTL) ? c.groups : null;
 }
 
-function saveOnward(ref: string, groups: Record<string, string[]>) {
+async function fetchOnward(ref: string): Promise<Record<string, OnwardGroup>> {
+  const doc = await ojp(departuresBody(ref, true));
+  rememberDoc(doc);
+  const groups = parseOnward(doc);
+  saveJson(onwardKey(ref), { at: Date.now(), groups });
+  return groups;
+}
+
+// Background fetch, at most once at a time per stop; failures are silent (toggle() retries on demand).
+const prefetching = new Set<string>();
+async function prefetchOnward(ref: string): Promise<Record<string, OnwardGroup> | null> {
+  if (prefetching.has(ref)) return null;
+  prefetching.add(ref);
   try {
-    localStorage.setItem(onwardKey(ref), JSON.stringify({ at: Date.now(), groups }));
+    return await fetchOnward(ref);
   } catch {
-    // Storage unavailable: stops just get refetched next time.
+    return null;
+  } finally {
+    prefetching.delete(ref);
   }
 }
 
@@ -89,7 +131,10 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<(Stop & { dist?: number })[]>([]);
   const [open, setOpen] = useState<string | null>(null);
-  const [onward, setOnward] = useState<Record<string, string[]> | null>(null);
+  const [onward, setOnward] = useState<Record<string, OnwardGroup> | null>(null);
+  const [offline, setOffline] = useState<Date | null>(null);
+  const current = useRef(selected.ref);
+  current.current = selected.ref;
   const [showSearch, setShowSearch] = useState(false);
   const [view, setView] = useState<"departures" | "route">("departures");
 
@@ -100,9 +145,19 @@ export default function App() {
 
   async function load() {
     setStatus("Loading…");
+    const ref = selected.ref;
     try {
-      setDeps(parseDepartures(await ojp(departuresBody(selected.ref))));
-      setStatus(`updated ${hhmm(new Date())}`);
+      const { doc, offlineSince } = await ojpCached(`deps:${ref}`, departuresBody(ref));
+      setDeps(parseDepartures(doc));
+      setOffline(offlineSince);
+      setOnward(loadOnward(ref, offlineSince !== null));
+      setStatus(offlineSince ? `offline · from ${hhmm(offlineSince)}` : `updated ${hhmm(new Date())}`);
+      if (!offlineSince) {
+        rememberDoc(doc);
+        if (!loadOnward(ref, false)) {
+          void prefetchOnward(ref).then((g) => g && current.current === ref && setOnward(g));
+        }
+      }
     } catch (err) {
       setStatus(String(err));
     }
@@ -110,6 +165,7 @@ export default function App() {
 
   useEffect(() => {
     setOpen(null);
+    setOnward(null);
     load();
   }, [selected.ref]);
 
@@ -122,6 +178,14 @@ export default function App() {
     return () => clearInterval(id);
   }, [selected.ref, view]);
 
+  // Back online: refresh immediately instead of waiting for the next 30s tick.
+  useEffect(() => {
+    if (view !== "departures") return;
+    const on = () => void load();
+    window.addEventListener("online", on);
+    return () => window.removeEventListener("online", on);
+  }, [selected.ref, view]);
+
   function nearMe() {
     if (!navigator.geolocation) return setStatus("location not available in this browser");
     setStatus("locating…");
@@ -131,6 +195,7 @@ export default function App() {
         try {
           let found = parseStops(await ojp(nearBody(here.lat, here.lon)));
           if (!found.length) found = parseStops(await ojp(nearBody(here.lat, here.lon, 1000)));
+          rememberPlaces(found);
           const withDist = found
             .map((s) => ({ ...s, dist: s.lat && s.lon ? metres(here, { lat: s.lat, lon: s.lon }) : undefined }))
             .sort((a, b) => (a.dist ?? Infinity) - (b.dist ?? Infinity));
@@ -138,7 +203,11 @@ export default function App() {
           setShowSearch(true);
           setStatus(withDist.length ? `${withDist.length} stops nearby` : "no stops within 1 km");
         } catch (err) {
-          setStatus(String(err));
+          if (!isOffline(err)) return setStatus(String(err));
+          const known = knownNear(here);
+          setResults(known);
+          setShowSearch(true);
+          setStatus(known.length ? `offline · ${known.length} known stops nearby` : "offline · no known stops within 1 km");
         }
       },
       (err) => setStatus(`location: ${err.message}`),
@@ -149,13 +218,12 @@ export default function App() {
   async function toggle(key: string) {
     if (open === key) return setOpen(null);
     setOpen(key);
-    const cached = loadOnward(selected.ref);
-    if (cached?.[key]) return setOnward(cached);
-    setOnward(null);
+    if (onward?.[key]) return;
+    const ref = selected.ref;
     try {
-      const fresh = { ...cached, ...parseOnward(await ojp(departuresBody(selected.ref, true))) };
-      saveOnward(selected.ref, fresh);
-      setOnward(fresh);
+      const fresh = await fetchOnward(ref);
+      if (current.current === ref) setOnward(fresh);
+      if (!fresh[key]) setStatus("no stop list for this line");
     } catch (err) {
       setStatus(String(err));
     }
@@ -165,13 +233,24 @@ export default function App() {
     e.preventDefault();
     if (!query.trim()) return;
     try {
-      setResults(parseStops(await ojp(searchBody(query))));
+      const found = parseStops(await ojp(searchBody(query)));
+      rememberPlaces(found);
+      setResults(found);
     } catch (err) {
-      setStatus(String(err));
+      if (!isOffline(err)) return setStatus(String(err));
+      const known = knownSearch(query);
+      setResults(known);
+      setStatus(known.length ? `offline · ${known.length} known stops` : "offline · no known stop matches");
     }
   }
 
   const isSaved = (s: Stop) => stops.some((x) => x.ref === s.ref);
+
+  // Offline the cached list still holds departures that have left: hide them, and keep lines with none left.
+  const now = Date.now();
+  const grouped = new Map(groupByDirection(offline ? deps.filter((d) => d.expected.getTime() > now) : deps));
+  if (offline) for (const k of Object.keys(onward ?? {})) if (!grouped.has(k)) grouped.set(k, []);
+  const groups = [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }));
 
   const pivot = isSaved(selected) ? stops : [...stops, selected];
 
@@ -242,21 +321,35 @@ export default function App() {
         </>
       )}
 
-      {groupByDirection(deps).map(([key, list]) => (
+      {groups.map(([key, list]) => {
+        const g = onward?.[key];
+        const head = list[0] ?? g!;
+        const every = offline
+          ? g?.headway && headwayApplies(new Date(g.measuredAt), new Date(now))
+            ? `usually every ~${g.headway} min (as of ${sampleLabel(new Date(g.measuredAt))})`
+            : null
+          : (() => {
+              const h = headway(list.map((d) => d.planned.getTime() / 60000)) ?? g?.headway;
+              return h ? `every ~${h} min` : null;
+            })();
+        return (
         <section key={key}>
           <button className="group" aria-expanded={open === key} onClick={() => toggle(key)}>
-            <span className={`tile ${list[0].mode}`}>
-              <b>{list[0].line}</b>
-              <small>{list[0].mode}</small>
+            <span className={`tile ${head.mode}`}>
+              <b>{head.line}</b>
+              <small>{head.mode}</small>
             </span>
             <span className="deps">
-              <span className="dest">{list[0].to}</span>
+              <span className="dest">{head.to}</span>
+              {every && <span className="headway">{every}</span>}
+              {list.length === 0 && <span className="headway">no cached departures</span>}
               {list.map((d, i) => {
                 const delay = Math.round((d.expected.getTime() - d.planned.getTime()) / 60000);
-                const left = Math.max(0, Math.floor((d.expected.getTime() - Date.now()) / 60000));
+                const left = Math.max(0, Math.floor((d.expected.getTime() - now) / 60000));
                 return (
                   <span className="dep" key={i}>
                     <span>{hhmm(d.planned)}</span>
+                    <AccessMark level={d.access} replacement={d.replacement} />
                     {delay > 0 && <span className="late">+{delay}'</span>}
                     <span className="via">{d.to !== list[0].to ? d.to : d.quay && `quay ${d.quay}`}</span>
                     <span className="left">{left === 0 ? "now" : `${left} min`}</span>
@@ -267,11 +360,12 @@ export default function App() {
           </button>
           {open === key && (
             <ul className="route">
-              {onward?.[key] ? onward[key].map((s, i) => <li key={i}>{s}</li>) : <li>loading stops…</li>}
+              {g ? g.stops.map((s, i) => <li key={i}>{s.name} · {s.min} min</li>) : <li>{offline ? "stops not cached" : "loading stops…"}</li>}
             </ul>
           )}
         </section>
-      ))}
+        );
+      })}
 
       <p className="status">{status}</p>
       </>

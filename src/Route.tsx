@@ -1,11 +1,17 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
+import AccessMark from "./Access.tsx";
 import {
   hhmm,
+  isOffline,
+  knownSearch,
   loadRoutes,
   loadStops,
   ojp,
+  ojpCached,
   parseStops,
   parseTrips,
+  rememberDoc,
+  rememberPlaces,
   saveRoutes,
   searchBody,
   short,
@@ -27,15 +33,24 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [active, setActive] = useState<Route | null>(null);
   const [status, setStatus] = useState("");
+  const [openLeg, setOpenLeg] = useState<string | null>(null);
 
   async function plan(from: Stop | null, to: Stop | null) {
     if (!from || !to) return;
     setActive({ from, to });
     setStatus("planning…");
     try {
-      const found = parseTrips(await ojp(tripBody(from, to)));
+      const { doc, offlineSince } = await ojpCached(`trip:${from.ref}>${to.ref}`, tripBody(from, to));
+      rememberDoc(doc);
+      let found = parseTrips(doc);
+      // Offline the cached connections include ones that have already left.
+      if (offlineSince) found = found.filter((t) => t.start.getTime() > Date.now());
       setTrips(found);
-      setStatus(found.length ? `updated ${hhmm(new Date())}` : "no connections found");
+      setStatus(
+        offlineSince
+          ? found.length ? `offline · from ${hhmm(offlineSince)}` : "offline · no cached connections left"
+          : found.length ? `updated ${hhmm(new Date())}` : "no connections found",
+      );
     } catch (err) {
       setStatus(String(err));
     }
@@ -50,13 +65,26 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
     return () => clearInterval(id);
   }, [active?.from.ref, active?.to.ref]);
 
+  // Back online: re-plan immediately instead of waiting for the next 30s tick.
+  useEffect(() => {
+    if (!active) return;
+    const on = () => void plan(active.from, active.to);
+    window.addEventListener("online", on);
+    return () => window.removeEventListener("online", on);
+  }, [active?.from.ref, active?.to.ref]);
+
   async function search(e: React.FormEvent) {
     e.preventDefault();
     if (!query.trim()) return;
     try {
-      setResults(parseStops(await ojp(searchBody(query))));
+      const found = parseStops(await ojp(searchBody(query)));
+      rememberPlaces(found);
+      setResults(found);
     } catch (err) {
-      setStatus(String(err));
+      if (!isOffline(err)) return setStatus(String(err));
+      const known = knownSearch(query);
+      setResults(known);
+      setStatus(known.length ? `offline · ${known.length} known stops` : "offline · no known stop matches");
     }
   }
 
@@ -165,17 +193,29 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
             l.kind === "walk" ? (
               <p key={j} className="leg walk">walk {l.minutes} min</p>
             ) : (
-              <div key={j} className="leg">
-                <span className={`tile sm ${l.mode}`}>
-                  <b>{l.line}</b>
-                </span>
-                <span>
-                  {short(l.from)} <strong>{hhmm(l.fromTime)}</strong>
-                  {l.delay > 0 && <span className="late"> +{l.delay}'</span>}
-                  {l.quay && ` · quay ${l.quay}`}
-                  <br />→ {short(l.alight)} {hhmm(l.alightTime)}
-                </span>
-              </div>
+              <Fragment key={j}>
+                <button
+                  className="leg"
+                  aria-expanded={openLeg === `${i}-${j}`}
+                  onClick={() => setOpenLeg(openLeg === `${i}-${j}` ? null : `${i}-${j}`)}
+                >
+                  <span className={`tile sm ${l.mode}`}>
+                    <b>{l.line}</b>
+                  </span>
+                  <span>
+                    {short(l.from)} <strong>{hhmm(l.fromTime)}</strong>
+                    <AccessMark level={l.access} replacement={l.replacement} />
+                    {l.delay > 0 && <span className="late"> +{l.delay}'</span>}
+                    {l.quay && ` · quay ${l.quay}`}
+                    <br />→ {short(l.alight)} {hhmm(l.alightTime)}
+                  </span>
+                </button>
+                {openLeg === `${i}-${j}` && (
+                  <ul className="route sm">
+                    {l.stops.length ? l.stops.map((s, k) => <li key={k}>{short(s.name)} {hhmm(s.time)}</li>) : <li>no intermediate stops</li>}
+                  </ul>
+                )}
+              </Fragment>
             ),
           )}
         </section>

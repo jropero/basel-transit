@@ -69,10 +69,15 @@ button:disabled { opacity: 0.35; cursor: default; }
 .trip { padding: 12px 0; border-bottom: 1px solid var(--line); }
 .trip-head { margin: 0 0 8px; font-size: 22px; font-weight: 300; }
 .trip-head span { font-size: 15px; color: var(--muted); }
-.leg { display: flex; align-items: center; gap: 10px; margin: 6px 0; color: var(--muted); }
+.leg { display: flex; width: 100%; text-align: left; align-items: center; gap: 10px; margin: 6px 0; color: var(--muted); }
 .leg strong { color: var(--fg); font-weight: 400; }
 .leg .late { color: var(--late); }
 .walk { margin-left: 50px; font-style: italic; }
 .tile.sm { flex: 0 0 40px; height: 40px; }
 .tile.sm b { inset: 0; font-size: 18px; }
 .results li .dist { color: var(--muted); font-size: 14px; }
+.route.sm { margin-left: 19px; }
+.headway { display: block; font-size: 13px; color: var(--muted); margin-bottom: 2px; }
+.acc { color: var(--fg); margin-left: 2px; font-family: "Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols 2", sans-serif; font-variant-emoji: text; }
+.acc.part { color: var(--muted); }
+.repl { margin-left: 6px; padding: 0 4px; font-size: 11px; color: #000; background: var(--late); text-transform: lowercase; }

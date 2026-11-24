@@ -36,7 +36,7 @@ export const tripBody = (from: Stop, to: Stop) =>
       <Destination><PlaceRef><StopPlaceRef>${escapeXml(to.ref)}</StopPlaceRef></PlaceRef></Destination>
       <Params>
         <NumberOfResults>5</NumberOfResults>
-        <IncludeIntermediateStops>false</IncludeIntermediateStops>
+        <IncludeIntermediateStops>true</IncludeIntermediateStops>
         <UseRealtimeData>explanatory</UseRealtimeData>
       </Params>
     </OJPTripRequest>`);
@@ -47,7 +47,7 @@ const OJP_ENDPOINT = import.meta.env.DEV
   ? "/ojp"
   : "https://api.opentransportdata.swiss/ojp20";
 
-export async function ojp(body: string): Promise<Document> {
+async function post(body: string): Promise<string> {
   const res = await fetch(OJP_ENDPOINT, {
     method: "POST",
     headers: {
@@ -57,7 +57,29 @@ export async function ojp(body: string): Promise<Document> {
     body,
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
-  return new DOMParser().parseFromString(await res.text(), "application/xml");
+  return res.text();
+}
+
+const parseXml = (xml: string) => new DOMParser().parseFromString(xml, "application/xml");
+
+export const ojp = async (body: string): Promise<Document> => parseXml(await post(body));
+
+// fetch() rejects with a TypeError when there is no network; HTTP errors are plain Errors.
+export const isOffline = (err: unknown) => err instanceof TypeError;
+
+// Online: fetch and remember the raw XML. No network: serve the last stored copy (offlineSince = when it was fetched).
+// shortcut: entries are never evicted; a full localStorage just stops caching.
+export async function ojpCached(key: string, body: string): Promise<{ doc: Document; offlineSince: Date | null }> {
+  const k = `basel-transit:cache:${key}`;
+  try {
+    const xml = await post(body);
+    saveJson(k, { at: Date.now(), xml });
+    return { doc: parseXml(xml), offlineSince: null };
+  } catch (err) {
+    const c = loadJson<{ at: number; xml: string } | null>(k, null);
+    if (isOffline(err) && c) return { doc: parseXml(c.xml), offlineSince: new Date(c.at) };
+    throw err;
+  }
 }
 
 // Namespace-agnostic lookup: first descendant with this local name, text only.
@@ -87,6 +109,111 @@ console.assert(
   "metres",
 );
 
+// Known-stops directory: every stop seen in any response, so search and near me work offline.
+type Known = Record<string, { name: string; lat: number; lon: number }>;
+const PLACES_KEY = "basel-transit:places";
+
+export function rememberPlaces(stops: Stop[]) {
+  const known = loadJson<Known>(PLACES_KEY, {});
+  let changed = false;
+  for (const s of stops) {
+    if (!s.ref || !s.lat || !s.lon) continue;
+    const k = known[s.ref];
+    if (k && k.name === s.name && k.lat === s.lat && k.lon === s.lon) continue;
+    known[s.ref] = { name: s.name, lat: s.lat, lon: s.lon };
+    changed = true;
+  }
+  if (changed) saveJson(PLACES_KEY, known);
+}
+
+// Places holds StopPlace, StopPoint and TopographicPlace entries; only StopPlace ones are stops.
+export function rememberDoc(doc: Document) {
+  rememberPlaces(
+    all(doc, "Place")
+      .filter((p) => all(p, "StopPlace").length)
+      .map((p) => ({
+        ref: text(p, "StopPlaceRef"),
+        name: text(p, "StopPlaceName"),
+        lat: Number(text(p, "Latitude")) || undefined,
+        lon: Number(text(p, "Longitude")) || undefined,
+      })),
+  );
+}
+
+const knownList = (): (Stop & { lat: number; lon: number })[] =>
+  Object.entries(loadJson<Known>(PLACES_KEY, {})).map(([ref, v]) => ({ ref, ...v }));
+
+export const knownSearch = (q: string): Stop[] => {
+  const needle = q.trim().toLowerCase();
+  return knownList().filter((s) => s.name.toLowerCase().includes(needle)).slice(0, 10);
+};
+
+// 10 nearest known stops within 1 km.
+export const knownNear = (here: { lat: number; lon: number }): (Stop & { dist: number })[] =>
+  knownList()
+    .map((s) => ({ ...s, dist: metres(here, s) }))
+    .filter((s) => s.dist <= 1000)
+    .sort((a, b) => a.dist - b.dist)
+    .slice(0, 10);
+
+// Median gap in minutes between consecutive planned times (given in minutes); null below 3 times.
+export const headway = (mins: number[]): number | null => {
+  if (mins.length < 3) return null;
+  const s = [...mins].sort((a, b) => a - b);
+  const gaps = s.slice(1).map((m, i) => m - s[i]).sort((a, b) => a - b);
+  const mid = gaps.length >> 1;
+  return Math.round(gaps.length % 2 ? gaps[mid] : (gaps[mid - 1] + gaps[mid]) / 2);
+};
+console.assert(
+  headway([0, 7, 14, 22]) === 7 && headway([0, 30, 60]) === 30 && headway([0, 30]) === null,
+  "headway",
+);
+
+const dayType = (d: Date) => (d.getDay() === 0 ? "Sun" : d.getDay() === 6 ? "Sat" : "weekday");
+const minuteOfDay = (d: Date) => d.getHours() * 60 + d.getMinutes();
+
+// A sampled headway only still applies on the same day type and within 2 hours of the same time of day.
+export const headwayApplies = (sampled: Date, now: Date) =>
+  dayType(sampled) === dayType(now) && Math.abs(minuteOfDay(sampled) - minuteOfDay(now)) <= 120;
+console.assert(
+  headwayApplies(new Date(2026, 10, 28, 14, 0), new Date(2026, 10, 28, 15, 30)) &&
+    !headwayApplies(new Date(2026, 10, 28, 14, 0), new Date(2026, 10, 28, 17, 0)) &&
+    !headwayApplies(new Date(2026, 10, 28, 14, 0), new Date(2026, 10, 29, 14, 0)) &&
+    headwayApplies(new Date(2026, 10, 24, 9, 0), new Date(2026, 10, 25, 10, 0)),
+  "headwayApplies",
+);
+
+export const sampleLabel = (d: Date) => `${d.toLocaleDateString("en-GB", { weekday: "short" })} ${hhmm(d)}`;
+
+// Boarding accessibility for one departure/leg. `at` is the call that carries the platform NameSuffix
+// (ThisCall / LegBoard); `el` is the whole StopEvent / TimedLeg, whose Service/Attribute/Code A__NF marks low-floor.
+export type Access = "step-free" | "assisted" | "none" | null;
+export function access(el: Element, at: Element): Access {
+  const platform = text(at, "NameSuffix");
+  const lowFloor = all(el, "Code").some((c) => c.textContent?.trim() === "A__NF");
+  if (platform === "PLATFORM_NOT_WHEELCHAIR_ACCESSIBLE") return "none";
+  if (platform === "PLATFORM_ACCESS_WITHOUT_ASSISTANCE") return lowFloor ? "step-free" : null;
+  if (platform === "PLATFORM_ACCESS_WITH_ASSISTANCE") return "assisted";
+  return lowFloor ? "assisted" : null;
+}
+export const replacement = (at: Element) => text(at, "NameSuffix") === "ALTERNATIVE_TRANSPORT";
+{
+  const t = (suffix: string, nf: boolean) => {
+    const d = parseXml(
+      `<E xmlns="x"><At><NameSuffix><Text>${suffix}</Text></NameSuffix></At>${nf ? "<Code>A__NF</Code>" : ""}</E>`,
+    );
+    return access(d.documentElement, all(d, "At")[0]);
+  };
+  console.assert(
+    t("PLATFORM_ACCESS_WITHOUT_ASSISTANCE", true) === "step-free" &&
+      t("PLATFORM_ACCESS_WITH_ASSISTANCE", false) === "assisted" &&
+      t("", true) === "assisted" &&
+      t("PLATFORM_NOT_WHEELCHAIR_ACCESSIBLE", true) === "none" &&
+      t("", false) === null,
+    "access",
+  );
+}
+
 export type Leg =
   | {
       kind: "ride";
@@ -99,6 +226,9 @@ export type Leg =
       alight: string;
       alightTime: Date;
       delay: number;
+      access: Access;
+      replacement: boolean;
+      stops: { name: string; time: Date }[];
     }
   | { kind: "walk"; minutes: number };
 
@@ -134,6 +264,9 @@ function parseLeg(leg: Element): Leg | null {
       alight: text(alight, "StopPointName"),
       alightTime: time(alight).expected,
       delay: Math.round((dep.expected.getTime() - dep.planned.getTime()) / 60000),
+      access: access(timed, board),
+      replacement: replacement(board),
+      stops: all(timed, "LegIntermediate").map((i) => ({ name: text(i, "StopPointName"), time: time(i).expected })),
     };
   }
   const transfer = all(leg, "TransferLeg")[0];
