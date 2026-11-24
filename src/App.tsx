@@ -184,6 +184,16 @@ function everyLabel(
   return h ? `every ~${h} min` : null;
 }
 
+// Wall clock for countdowns, ticking independently of the 30s data refresh.
+function useNow(tickMs = 10_000) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), tickMs);
+    return () => clearInterval(id);
+  }, [tickMs]);
+  return now;
+}
+
 function DepartureRow({ d, firstTo, now }: { d: Departure; firstTo: string; now: number }) {
   const delay = Math.round((d.expected.getTime() - d.planned.getTime()) / 60000);
   const left = Math.max(0, Math.floor((d.expected.getTime() - now) / 60000));
@@ -481,7 +491,7 @@ export default function App() {
 
   const isSaved = (s: Stop) => stops.some(x => x.ref === s.ref);
 
-  const now = loadedAt ?? 0;
+  const now = useNow();
   const groups = visibleGroups(deps, offline !== null, onward, now);
 
   const pivot = isSaved(selected) ? stops : [...stops, selected];
