@@ -1,22 +1,39 @@
 {
   "name": "basel-transit",
   "version": "0.0.1",
-  "description": "Check trams and buses in Basel",
   "private": true,
+  "description": "Check trams and buses in Basel",
+  "license": "ISC",
   "type": "module",
   "scripts": {
     "dev": "vp dev",
     "build": "tsc && vp build",
-    "preview": "vp preview"
+    "preview": "vp preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "vp lint",
+    "lint:css": "stylelint src/index.css",
+    "format": "vp fmt",
+    "format:check": "vp fmt --check",
+    "prepare": "husky"
   },
-  "license": "ISC",
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
   "devDependencies": {
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
+    "eslint-plugin-sonarjs": "4.2.2",
+    "husky": "^9.1.7",
+    "stylelint": "^18.1.0",
+    "stylelint-config-standard": "^41.1.0",
     "typescript": "~7.0.2",
     "vite": "catalog:",
     "vite-plus": "catalog:"
+  },
+  "lint-staged": {
+    "*.css": "stylelint"
   },
   "devEngines": {
     "packageManager": {
@@ -24,9 +41,5 @@
       "version": "12.23.0",
       "onFail": "download"
     }
-  },
-  "dependencies": {
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1"
   }
 }

@@ -7,7 +7,7 @@ export default function RefreshBar({ at, loading }: { at: number | null; loading
   return (
     <div className="refresh" aria-hidden="true">
       {loading ? (
-        [0, 1, 2, 3, 4].map((i) => <i key={i} style={{ animationDelay: `${i * 0.12}s` }} />)
+        [0, 1, 2, 3, 4].map(i => <i key={i} style={{ animationDelay: `${i * 0.12}s` }} />)
       ) : (
         <span key={at} style={{ animationDuration: `${REFRESH_MS}ms` }} />
       )}
