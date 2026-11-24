@@ -1,6 +1,8 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import AccessMark, { Diverted, QuayMark } from './Access.tsx';
 import Alerts, { AlertMark } from './Alerts.tsx';
+import AppBar from './AppBar.tsx';
+import { Icon } from './icons.tsx';
 import RefreshBar, { REFRESH_MS } from './RefreshBar.tsx';
 import {
   hhmm,
@@ -45,7 +47,13 @@ function changesLabel(transfers: number) {
   return `${transfers} change${transfers > 1 ? 's' : ''}`;
 }
 
-export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
+export default function RoutePlanner({
+  from: initialFrom,
+  shown,
+}: {
+  from: Stop;
+  shown: boolean;
+}) {
   const saved = loadStops();
   const [ends, setEnds] = useState<Record<Field, Stop | null>>({ from: initialFrom, to: null });
   const [routes, setRoutes] = useState<Route[]>(loadRoutes);
@@ -59,6 +67,11 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
   const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [openLeg, setOpenLeg] = useState<string | null>(null);
+
+  // The pane stays mounted: follow the stop picked on the departures pane.
+  useEffect(() => {
+    setEnds(e => (e.from?.ref === initialFrom.ref ? e : { ...e, from: initialFrom }));
+  }, [initialFrom]);
 
   const activeFrom = active?.from;
   const activeTo = active?.to;
@@ -90,21 +103,21 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
 
   // Re-plan 15s after the last load (manual or automatic); in the background just re-arm the timer.
   useEffect(() => {
-    if (!activeFrom || !activeTo || loadedAt === null) return;
+    if (!shown || !activeFrom || !activeTo || loadedAt === null) return;
     const id = setTimeout(
       () => (document.hidden ? setLoadedAt(Date.now()) : void plan(activeFrom, activeTo)),
       REFRESH_MS,
     );
     return () => clearTimeout(id);
-  }, [loadedAt, activeFrom, activeTo, plan]);
+  }, [shown, loadedAt, activeFrom, activeTo, plan]);
 
   // Back online: re-plan immediately instead of waiting for the next tick.
   useEffect(() => {
-    if (!activeFrom || !activeTo) return;
+    if (!shown || !activeFrom || !activeTo) return;
     const on = () => void plan(activeFrom, activeTo);
     window.addEventListener('online', on);
     return () => window.removeEventListener('online', on);
-  }, [activeFrom, activeTo, plan]);
+  }, [shown, activeFrom, activeTo, plan]);
 
   async function search(e: React.FormEvent) {
     e.preventDefault();
@@ -146,16 +159,26 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
     saveRoutes(next);
   }
 
+  function clear() {
+    setEnds(e => ({ ...e, to: null }));
+    setTrips([]);
+    setSituations([]);
+    setActive(null);
+    setLoadedAt(null);
+    setStatus('');
+    setOpenLeg(null);
+  }
+
   const same = (r: Route) => r.from.ref === ends.from?.ref && r.to.ref === ends.to?.ref;
   const label = (r: Route) => `${short(r.from.name)} → ${short(r.to.name)}`;
 
   return (
     <>
-      {active && <RefreshBar at={loadedAt} loading={loading} />}
+      {shown && active && <RefreshBar at={loadedAt} loading={loading} />}
       {routes.length > 0 && (
         <ul className="results">
           {routes.map(r => (
-            <li key={label(r)}>
+            <li key={label(r)} className="tilt">
               <button
                 className="saved-route"
                 onClick={() => {
@@ -170,7 +193,7 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
                 aria-label={`Delete ${label(r)}`}
                 onClick={() => updateRoutes(routes.filter(x => x !== r))}
               >
-                ✕
+                <Icon name="close" size={18} />
               </button>
             </li>
           ))}
@@ -194,16 +217,12 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
                   {short(s.name)}
                 </button>
               ))}
-              {field === 'from' && (
-                <button aria-label="Use nearest stop" onClick={fromNearMe}>
-                  ◎ near me
-                </button>
-              )}
               <button
+                aria-label={`Search ${field} stop`}
                 aria-expanded={searching === field}
                 onClick={() => setSearching(searching === field ? null : field)}
               >
-                ⌕
+                <Icon name="search" size={22} />
               </button>
             </nav>
             {searching === field && (
@@ -223,7 +242,7 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
                 {results.length > 0 && (
                   <ul className="results">
                     {results.map(s => (
-                      <li key={s.ref}>
+                      <li key={s.ref} className="tilt">
                         <span>
                           {s.name}
                           {s.dist !== undefined && <span className="dist"> {s.dist} m</span>}
@@ -241,23 +260,33 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
         );
       })}
 
-      <div className="appbar">
-        <button disabled={!ends.from || !ends.to} onClick={() => plan(ends.from, ends.to)}>
-          → go
-        </button>
-        <button
-          aria-label="Swap from and to"
-          onClick={() => setEnds({ from: ends.to, to: ends.from })}
-        >
-          ⇅ swap
-        </button>
-        <button
-          disabled={!ends.from || !ends.to || routes.some(same)}
-          onClick={() => updateRoutes([...routes, { from: ends.from!, to: ends.to! }])}
-        >
-          ★ save route
-        </button>
-      </div>
+      {shown && (
+        <AppBar
+          actions={[
+            {
+              icon: 'go',
+              label: 'Go',
+              disabled: !ends.from || !ends.to,
+              onClick: () => plan(ends.from, ends.to),
+            },
+            {
+              icon: 'swap',
+              label: 'Swap from and to',
+              text: 'swap',
+              onClick: () => setEnds({ from: ends.to, to: ends.from }),
+            },
+            { icon: 'nearMe', label: 'Use nearest stop', text: 'near me', onClick: fromNearMe },
+            {
+              icon: 'star',
+              label: 'Save route',
+              text: 'save',
+              disabled: !ends.from || !ends.to || routes.some(same),
+              onClick: () => updateRoutes([...routes, { from: ends.from!, to: ends.to! }]),
+            },
+          ]}
+          menu={[{ label: 'clear', onClick: clear }]}
+        />
+      )}
 
       <Alerts situations={situations} ids={trips.flatMap(t => t.alerts)} />
 
@@ -267,7 +296,9 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
             {hhmm(t.start)} → {hhmm(t.end)}
             <AlertMark on={t.alerts.length > 0} />
             {t.legs.some(l => l.kind === 'ride' && l.cancelled) && (
-              <span className="tag bad">⚠ cancelled leg</span>
+              <span className="tag bad">
+                <Icon name="alert" size={12} /> cancelled leg
+              </span>
             )}
             <span>
               {' '}
@@ -282,7 +313,7 @@ export default function RoutePlanner({ from: initialFrom }: { from: Stop }) {
             ) : (
               <Fragment key={j}>
                 <button
-                  className={l.cancelled ? 'leg cancelled' : 'leg'}
+                  className={l.cancelled ? 'leg cancelled tilt' : 'leg tilt'}
                   aria-expanded={openLeg === `${i}-${j}`}
                   onClick={() => setOpenLeg(openLeg === `${i}-${j}` ? null : `${i}-${j}`)}
                 >

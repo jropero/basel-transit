@@ -11,9 +11,40 @@
     <link rel="apple-touch-icon" href="/b/apple-touch-icon.png" />
     <link rel="manifest" href="/b/manifest.webmanifest" />
     <title>Basel Transit</title>
+    <style>
+      @font-face {
+        font-family: Selawik;
+        src: url('/b/fonts/selawkl.woff2') format('woff2');
+        font-weight: 300;
+      }
+      body {
+        margin: 0;
+        background: #000;
+      }
+      .splash {
+        display: grid;
+        place-items: center;
+        height: 100dvh;
+      }
+      .splash span {
+        display: grid;
+        place-items: center;
+        width: 120px;
+        height: 120px;
+        background: #0050ef;
+        color: #fff;
+        font:
+          300 56px Selawik,
+          'Segoe UI',
+          system-ui,
+          sans-serif;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="splash"><span aria-hidden="true">bt</span></div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

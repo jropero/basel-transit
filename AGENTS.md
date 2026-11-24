@@ -19,7 +19,9 @@ Basel tram/bus departures and route planner. React 19 + TypeScript on Vite+ (`vp
 - `src/App.tsx`: departures view. Saved-stop pivot, search, near me, groups by line + `DirectionRef`, onward stops (prefetched, cached 7 days), alerts, 15s auto-refresh.
 - `src/Route.tsx`: route view (`OJPTripRequest`). From/to, saved routes, 15s auto-refresh.
 - `src/RefreshBar.tsx`: Metro countdown bar and loading dots. `src/Alerts.tsx`: alert banner and ⚠ mark. `src/Access.tsx`: ♿, replacement, quay-change and diverted marks.
-- `public/sw.js`: service worker for the offline app shell (production only).
+- `src/AppBar.tsx`: bottom app bar (round Fluent icons, ••• menu). `src/Settings.tsx` + `src/accent.ts`: accent colour picker (20 Windows Phone accents, `--accent` / `--on-accent`). `src/motion.ts`: tilt on press. `src/icons.tsx`: vendored Fluent UI System Icons (MIT, see `src/icons.LICENSE.txt`); don't add the icon package as a dependency.
+- Views are a swipe pivot (departures | route | settings) in `App.tsx` (`usePivot`, `PivotHeader`): the headers loop, and system back returns to departures.
+- `public/sw.js`: service worker for the offline app shell (production only). `public/fonts/`: Selawik (OFL) as the Segoe UI fallback.
 - `src/index.css`: the only stylesheet, plain CSS with tokens on `:root`. Always dark. No CSS framework: don't add one.
 - `public/`: PWA manifest and icons. Paths are absolute `/b/...`.
 

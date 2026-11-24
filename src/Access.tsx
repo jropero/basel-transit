@@ -1,6 +1,7 @@
+import { Icon } from './icons.tsx';
 import type { Access, Quay } from './ojp.ts';
 
-// Small wheelchair marker (never colour-only: aria-label + title) and a "replacement" tag.
+// Small accessibility marker (never colour-only: aria-label + title) and a "replacement" tag.
 export default function AccessMark({
   level,
   replacement,
@@ -17,7 +18,7 @@ export default function AccessMark({
           aria-label="step-free boarding"
           title="step-free boarding"
         >
-          {'\u267F\uFE0E'}
+          <Icon name="access" size={16} />
         </span>
       )}
       {level === 'assisted' && (
@@ -27,7 +28,7 @@ export default function AccessMark({
           aria-label="boarding with assistance"
           title="boarding with assistance"
         >
-          {'\u267F\uFE0E'}
+          <Icon name="access" size={16} />
           <sup>+</sup>
         </span>
       )}

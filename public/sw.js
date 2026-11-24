@@ -1,8 +1,8 @@
 // Offline shell for /b/. Same-origin GETs only; the OJP API is never intercepted.
 // shortcut: old hashed assets linger until CACHE is bumped.
-const CACHE = "basel-transit-v1";
+const CACHE = "basel-transit-v2";
 const BASE = "/b/";
-const SHELL = ["", "index.html", "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png"].map((f) => BASE + f);
+const SHELL = ["", "index.html", "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png", "fonts/selawkl.woff2", "fonts/selawk.woff2", "fonts/selawksb.woff2"].map((f) => BASE + f);
 
 self.addEventListener("install", (e) => {
   e.waitUntil(

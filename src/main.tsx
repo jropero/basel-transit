@@ -1,6 +1,12 @@
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.tsx';
+import { applyAccent, loadAccent } from './accent.ts';
+import { registerTilt } from './motion.ts';
+
+// Before the first render, so the saved accent never flashes the default.
+applyAccent(loadAccent(), false);
+registerTilt();
 
 createRoot(document.getElementById('root')!).render(<App />);
 

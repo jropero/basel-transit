@@ -29,7 +29,9 @@ import {
   type Stop,
 } from './ojp.ts';
 import AccessMark, { Diverted, QuayMark } from './Access.tsx';
-import Alerts, { AlertMark } from './Alerts.tsx';
+import Alerts, { AlertMark, relevantSituations } from './Alerts.tsx';
+import AppBar from './AppBar.tsx';
+import Settings from './Settings.tsx';
 import RefreshBar, { REFRESH_MS } from './RefreshBar.tsx';
 import RoutePlanner from './Route.tsx';
 
@@ -232,7 +234,7 @@ function LineGroup({
   const every = everyLabel(offline, list, g, now);
   return (
     <section>
-      <button className="group" aria-expanded={isOpen} onClick={onToggle}>
+      <button className="group tilt" aria-expanded={isOpen} onClick={onToggle}>
         <span className={`tile ${head.mode}`}>
           <b>{head.line}</b>
           <small>{head.mode}</small>
@@ -321,7 +323,7 @@ function SearchPanel({
       {results.length > 0 && (
         <ul className="results">
           {results.map(s => (
-            <li key={s.ref}>
+            <li key={s.ref} className="tilt">
               <span>
                 {s.name}
                 {s.dist !== undefined && <span className="dist"> {s.dist} m</span>}
@@ -338,6 +340,20 @@ function SearchPanel({
       )}
     </>
   );
+}
+
+// App-icon badge: the number of active alerts at this stop (installed PWAs only; failures are fine).
+function updateBadge(situations: Situation[], deps: Departure[]) {
+  if (!('setAppBadge' in navigator)) return;
+  const n = relevantSituations(
+    situations,
+    deps.flatMap(d => d.alerts),
+  ).length;
+  try {
+    void (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => undefined);
+  } catch {
+    // Unsupported or not installed.
+  }
 }
 
 // Departures for one stop: loads on stop change, refreshes 15s after each load and when back online.
@@ -359,8 +375,11 @@ function useDepartures(ref: string, active: boolean) {
     setLoading(true);
     try {
       const { doc, offlineSince } = await ojpCached(`deps:${ref}`, departuresBody(ref));
-      setDeps(parseDepartures(doc));
-      setSituations(parseSituations(doc));
+      const parsed = parseDepartures(doc);
+      const sits = parseSituations(doc);
+      setDeps(parsed);
+      setSituations(sits);
+      updateBadge(sits, parsed);
       setOffline(offlineSince);
       setOnward(loadOnward(ref, offlineSince !== null));
       setStatus(
@@ -416,14 +435,52 @@ function useDepartures(ref: string, active: boolean) {
   };
 }
 
-export default function App() {
-  const [stops, setStops] = useState<Stop[]>(loadStops);
-  const [selected, setSelected] = useState<Stop>(stops[0]);
+const VIEWS = ['departures', 'route', 'settings'] as const;
+type View = (typeof VIEWS)[number];
+
+const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function StopsRow({
+  stops,
+  selected,
+  onSelect,
+}: {
+  stops: Stop[];
+  selected: Stop;
+  onSelect: (s: Stop) => void;
+}) {
+  const row = stops.some(s => s.ref === selected.ref) ? stops : [...stops, selected];
+  // Nothing to switch to: the title below already names the stop.
+  if (row.length < 2) return null;
+  return (
+    <nav className="stops" aria-label="Saved stops">
+      {row.map(s => (
+        <button key={s.ref} aria-current={s.ref === selected.ref} onClick={() => onSelect(s)}>
+          {short(s.name)}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+// Departures pane: owns search, onward stops and the 15s refresh (only while `active`).
+function Departures({
+  stops,
+  selected,
+  active,
+  onSelect,
+  onStops,
+}: {
+  stops: Stop[];
+  selected: Stop;
+  active: boolean;
+  onSelect: (s: Stop) => void;
+  onStops: (next: Stop[]) => void;
+}) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<(Stop & { dist?: number })[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
-  const [view, setView] = useState<'departures' | 'route'>('departures');
   const {
     deps,
     status,
@@ -436,16 +493,11 @@ export default function App() {
     loading,
     offline,
     load,
-  } = useDepartures(selected.ref, view === 'departures');
-
-  function updateStops(next: Stop[]) {
-    setStops(next);
-    saveStops(next);
-  }
+  } = useDepartures(selected.ref, active);
 
   // Switching stops resets the open line and its onward stops; the load effect refetches.
   function selectStop(s: Stop) {
-    setSelected(s);
+    onSelect(s);
     if (s.ref === selected.ref) return;
     setOpen(null);
     setOnward(null);
@@ -494,90 +546,207 @@ export default function App() {
   const now = useNow();
   const groups = visibleGroups(deps, offline !== null, onward, now);
 
-  const pivot = isSaved(selected) ? stops : [...stops, selected];
+  return (
+    <>
+      {active && <RefreshBar at={loadedAt} loading={loading} />}
+      {active && (
+        <AppBar
+          actions={[
+            { icon: 'refresh', label: 'Refresh', onClick: load },
+            {
+              icon: 'search',
+              label: 'Search',
+              expanded: showSearch,
+              onClick: () => setShowSearch(!showSearch),
+            },
+            { icon: 'nearMe', label: 'Near me', onClick: nearMe },
+          ]}
+          menu={[
+            {
+              label: 'remove stop',
+              disabled: !isSaved(selected) || stops.length <= 1,
+              onClick: () => {
+                const next = stops.filter(s => s.ref !== selected.ref);
+                onStops(next);
+                selectStop(next[0]);
+              },
+            },
+          ]}
+        />
+      )}
+      <StopsRow stops={stops} selected={selected} onSelect={selectStop} />
+      <h2 className="title">{short(selected.name)}</h2>
+
+      {showSearch && (
+        <SearchPanel
+          query={query}
+          onQuery={setQuery}
+          onSubmit={search}
+          results={results}
+          isSaved={isSaved}
+          onShow={s => {
+            selectStop(s);
+            setResults([]);
+            setShowSearch(false);
+          }}
+          onSave={s => onStops([...stops, { ref: s.ref, name: s.name }])}
+        />
+      )}
+
+      <Alerts situations={situations} ids={deps.flatMap(d => d.alerts)} />
+
+      {groups.map(([key, list]) => (
+        <LineGroup
+          key={key}
+          list={list}
+          g={onward?.[key]}
+          isOpen={open === key}
+          offline={offline !== null}
+          now={now}
+          onToggle={() => toggle(key)}
+        />
+      ))}
+
+      <p className="status">{status}</p>
+    </>
+  );
+}
+
+type PivotState = { pivot: true; view: View };
+
+const pivotState = (): PivotState | null => {
+  const st = history.state as Partial<PivotState> | null;
+  return st?.pivot ? (st as PivotState) : null;
+};
+
+// Keep at most one history entry for the pivot: leaving departures pushes it, moving between
+// the other views replaces it, and returning to departures pops it.
+function syncHistory(next: View) {
+  const entry = pivotState();
+  if (next === 'departures') {
+    if (entry) history.back();
+  } else if (entry) {
+    history.replaceState({ pivot: true, view: next }, '');
+  } else {
+    history.pushState({ pivot: true, view: next }, '');
+  }
+}
+
+// Swipe pivot state: native scroll-snap drives `view`; header taps scroll to the pane.
+function usePivot() {
+  const scroller = useRef<HTMLDivElement>(null);
+  const frame = useRef(0);
+  const viewRef = useRef<View>('departures');
+  const [view, setView] = useState<View>('departures');
+  const [turn, setTurn] = useState<View | null>(null);
+
+  const onScroll = () => {
+    if (frame.current) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0;
+      const el = scroller.current;
+      const next = el && VIEWS[Math.round(el.scrollLeft / el.clientWidth)];
+      if (!next || next === viewRef.current) return;
+      viewRef.current = next;
+      syncHistory(next);
+      setView(next);
+      setTurn(next);
+    });
+  };
+
+  const goTo = (v: View) => {
+    const el = scroller.current;
+    el?.scrollTo({
+      left: VIEWS.indexOf(v) * el.clientWidth,
+      behavior: reducedMotion() ? 'auto' : 'smooth',
+    });
+  };
+
+  // System back (Android gesture, iOS swipe-back, browser button) returns to departures.
+  useEffect(() => {
+    const onPop = () => goTo(pivotState()?.view ?? 'departures');
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  return { scroller, view, turn, onScroll, goTo };
+}
+
+// Big lowercase headers, looping like a Windows Phone pivot: the active one comes first,
+// the rest follow in order and wrap around.
+function PivotHeader({ view, onSelect }: { view: View; onSelect: (v: View) => void }) {
+  const row = useRef<HTMLDivElement>(null);
+  const refocus = useRef(false);
+  const i = VIEWS.indexOf(view);
+  const order = [...VIEWS.slice(i), ...VIEWS.slice(0, i)];
+
+  // The row is rebuilt when the view changes; hand keyboard focus to the new first header.
+  useEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    row.current?.querySelector('button')?.focus();
+  }, [view]);
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const step = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    refocus.current = true;
+    onSelect(VIEWS[(i + step + VIEWS.length) % VIEWS.length]);
+  };
+
+  return (
+    <nav className="views" aria-label="Views">
+      <div className="views-row" key={view} ref={row}>
+        {order.map(v => (
+          <button
+            key={v}
+            aria-current={view === v}
+            onClick={() => onSelect(v)}
+            onKeyDown={onKeyDown}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+export default function App() {
+  const [stops, setStops] = useState<Stop[]>(loadStops);
+  const [selected, setSelected] = useState<Stop>(stops[0]);
+  const { scroller, view, turn, onScroll, goTo } = usePivot();
+
+  function updateStops(next: Stop[]) {
+    setStops(next);
+    saveStops(next);
+  }
+
+  const pane = (v: View, children: React.ReactNode) => (
+    <section className="pane" aria-label={v} inert={view !== v}>
+      <div className={turn === v ? 'pane-in turn' : 'pane-in'}>{children}</div>
+    </section>
+  );
 
   return (
     <main className="app">
       <p className="brand">Basel Transit</p>
-      <nav className="views">
-        {(['departures', 'route'] as const).map(v => (
-          <button key={v} aria-current={view === v} onClick={() => setView(v)}>
-            {v}
-          </button>
-        ))}
-      </nav>
-
-      {view === 'route' ? (
-        <RoutePlanner from={selected} />
-      ) : (
-        <>
-          <RefreshBar at={loadedAt} loading={loading} />
-          <nav className="pivot">
-            {pivot.map(s => (
-              <button
-                key={s.ref}
-                aria-current={s.ref === selected.ref}
-                onClick={() => selectStop(s)}
-              >
-                {short(s.name)}
-              </button>
-            ))}
-          </nav>
-
-          <div className="appbar">
-            <button onClick={load} aria-label="Refresh">
-              ↻ refresh
-            </button>
-            <button
-              aria-label="Remove stop"
-              disabled={!isSaved(selected) || stops.length <= 1}
-              onClick={() => {
-                const next = stops.filter(s => s.ref !== selected.ref);
-                updateStops(next);
-                selectStop(next[0]);
-              }}
-            >
-              ✕ remove
-            </button>
-            <button aria-expanded={showSearch} onClick={() => setShowSearch(!showSearch)}>
-              ⌕ search
-            </button>
-            <button onClick={nearMe}>◎ near me</button>
-          </div>
-
-          {showSearch && (
-            <SearchPanel
-              query={query}
-              onQuery={setQuery}
-              onSubmit={search}
-              results={results}
-              isSaved={isSaved}
-              onShow={s => {
-                selectStop(s);
-                setResults([]);
-                setShowSearch(false);
-              }}
-              onSave={s => updateStops([...stops, { ref: s.ref, name: s.name }])}
-            />
-          )}
-
-          <Alerts situations={situations} ids={deps.flatMap(d => d.alerts)} />
-
-          {groups.map(([key, list]) => (
-            <LineGroup
-              key={key}
-              list={list}
-              g={onward?.[key]}
-              isOpen={open === key}
-              offline={offline !== null}
-              now={now}
-              onToggle={() => toggle(key)}
-            />
-          ))}
-
-          <p className="status">{status}</p>
-        </>
-      )}
+      <PivotHeader view={view} onSelect={goTo} />
+      <div className="panes" ref={scroller} onScroll={onScroll}>
+        {pane(
+          'departures',
+          <Departures
+            stops={stops}
+            selected={selected}
+            active={view === 'departures'}
+            onSelect={setSelected}
+            onStops={updateStops}
+          />,
+        )}
+        {pane('route', <RoutePlanner from={selected} shown={view === 'route'} />)}
+        {pane('settings', <Settings />)}
+      </div>
     </main>
   );
 }

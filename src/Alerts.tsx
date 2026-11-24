@@ -1,5 +1,10 @@
 import { useState } from 'react';
+import { Icon } from './icons.tsx';
 import type { Situation } from './ojp.ts';
+
+// Alerts that the given departures/trips point at.
+export const relevantSituations = (situations: Situation[], ids: string[]) =>
+  situations.filter(s => s.id.some(i => ids.includes(i)));
 
 // Service alerts relevant to what is on screen; tap one to expand its details.
 export default function Alerts({
@@ -10,7 +15,7 @@ export default function Alerts({
   ids: string[];
 }) {
   const [open, setOpen] = useState<string | null>(null);
-  const shown = situations.filter(s => s.id.some(i => ids.includes(i)));
+  const shown = relevantSituations(situations, ids);
   return (
     <>
       {shown.map(s => (
@@ -19,7 +24,7 @@ export default function Alerts({
             aria-expanded={open === s.id[0]}
             onClick={() => setOpen(open === s.id[0] ? null : s.id[0])}
           >
-            ⚠ {s.summary}
+            <Icon name="alert" size={18} /> {s.summary}
           </button>
           {open === s.id[0] && s.details.map((d, i) => <p key={i}>{d}</p>)}
         </section>
@@ -31,6 +36,6 @@ export default function Alerts({
 export const AlertMark = ({ on }: { on: boolean }) =>
   on ? (
     <span className="warn-mark" role="img" aria-label="service alert" title="service alert">
-      ⚠
+      <Icon name="alert" size={16} />
     </span>
   ) : null;

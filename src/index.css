@@ -1,13 +1,49 @@
+/* Selawik: Microsoft's open-source (OFL) Segoe UI substitute, bundled for offline use. */
+@font-face {
+  font-family: Selawik;
+  src: url('/b/fonts/selawkl.woff2') format('woff2');
+  font-weight: 300;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: Selawik;
+  src: url('/b/fonts/selawk.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: Selawik;
+  src: url('/b/fonts/selawksb.woff2') format('woff2');
+  font-weight: 600;
+  font-display: swap;
+}
+
 :root {
   --bg: #000;
   --fg: #fff;
   --muted: #8a8a8a;
-  --line: #333;
+  --bar: #1f1f1f;
   --accent: #0050ef;
-  --bus: #008a00;
+  --on-accent: #fff;
+  --bus: #647687;
   --late: #f0a30a;
+  --gutter: 24px;
+  --t-pivot: 48px;
+  --t-title: 32px;
+  --t-item: 24px;
+  --t-body: 17px;
+  --t-small: 14px;
+  --t-tiny: 11px;
 
   color-scheme: dark;
+}
+
+@media (width < 360px) {
+  :root {
+    --gutter: 16px;
+  }
 }
 
 * {
@@ -18,7 +54,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Segoe UI', Selawik, system-ui, sans-serif;
 }
 
 button {
@@ -36,9 +72,11 @@ button {
 }
 
 .app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
   max-width: 720px;
   margin: 0 auto;
-  padding: 16px;
 }
 
 .brand {
@@ -46,47 +84,210 @@ button {
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  margin: 0;
+  margin: 16px var(--gutter) 0;
 }
 
-.pivot {
+/* Pivot: big lowercase headers that loop, active first, the next ones peek in from the right. */
+.views {
+  overflow: hidden;
+  padding-left: var(--gutter);
+}
+
+.views-row {
+  position: relative;
   display: flex;
-  gap: 20px;
-  overflow-x: auto;
+  gap: 24px;
+  width: max-content;
+  animation: pivot-slide 200ms ease-out;
+}
+
+@keyframes pivot-slide {
+  from {
+    transform: translateX(40px);
+    opacity: 0.4;
+  }
+}
+
+.views button {
+  font-size: var(--t-pivot);
+  font-weight: 300;
+  line-height: 1.15;
+  text-transform: lowercase;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.views button[aria-current='true'] {
+  color: var(--fg);
+}
+
+.panes {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: auto hidden;
   scroll-snap-type: x mandatory;
-  margin: 4px -16px 0;
-  padding: 0 16px;
+  overscroll-behavior-x: contain;
   scrollbar-width: none;
 }
 
-.pivot button {
-  font-size: 40px;
+.pane {
+  flex: 0 0 100%;
+  min-width: 0;
+  overflow-y: auto;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  padding: 8px var(--gutter) calc(112px + env(safe-area-inset-bottom));
+}
+
+.turn {
+  transform-origin: left;
+  animation: turnstile-in 250ms ease-out;
+}
+
+@keyframes turnstile-in {
+  from {
+    transform: perspective(800px) rotateY(-70deg);
+    opacity: 0;
+  }
+}
+
+/* Metro tilt: motion.ts sets --rx / --ry / --s while a .tilt element is pressed. */
+.tilt {
+  transition: transform 120ms;
+  transform: perspective(600px) rotateX(var(--rx, 0)) rotateY(var(--ry, 0)) scale(var(--s, 1));
+}
+
+.icon {
+  flex: none;
+  vertical-align: -0.2em;
+}
+
+.title {
+  font-size: var(--t-title);
+  font-weight: 300;
+  text-transform: lowercase;
+  margin: 0 0 16px;
+}
+
+/* Saved stops: a small scrollable row; inner horizontal scroll must not hijack the page swipe. */
+.stops {
+  display: flex;
+  gap: 20px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  scrollbar-width: none;
+  margin-bottom: 8px;
+}
+
+.stops button {
+  font-size: var(--t-item);
   font-weight: 300;
   text-transform: lowercase;
   white-space: nowrap;
   color: var(--muted);
-  scroll-snap-align: start;
 }
 
-.pivot button[aria-current='true'] {
+.stops button[aria-current='true'] {
   color: var(--fg);
 }
 
+/* Bottom app bar: round outlined icon buttons; "..." reveals the labels and the menu. */
 .appbar {
-  display: flex;
-  gap: 12px;
-  margin: 16px 0;
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  background: var(--bar);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
-.appbar button,
-.btn {
+.bar-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 24px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 12px 56px 12px var(--gutter);
+  position: relative;
+}
+
+.bar-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.bar-circle {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
   border: 2px solid var(--fg);
-  padding: 4px 12px;
-  min-height: 36px;
+  border-radius: 50%;
+}
+
+.bar-btn:active .bar-circle {
+  background: var(--fg);
+  color: var(--bar);
+}
+
+.bar-label {
+  display: none;
+  font-size: var(--t-tiny);
   text-transform: lowercase;
 }
 
-.appbar button:active,
+.appbar.open .bar-label {
+  display: block;
+}
+
+.bar-more {
+  position: absolute;
+  top: 12px;
+  right: var(--gutter);
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 48px;
+}
+
+.bar-menu {
+  list-style: none;
+  margin: 0 auto;
+  padding: 16px var(--gutter) 0;
+  max-width: 720px;
+  animation: menu-up 200ms ease-out;
+}
+
+.bar-menu button {
+  font-size: var(--t-item);
+  text-transform: lowercase;
+  padding: 6px 0;
+}
+
+@keyframes menu-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--fg);
+  padding: 4px 12px;
+  min-height: 36px;
+  min-width: 36px;
+  text-transform: lowercase;
+}
+
 .btn:active {
   background: var(--fg);
   color: var(--bg);
@@ -124,8 +325,7 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--line);
+  margin-bottom: 12px;
 }
 
 .results li span {
@@ -137,8 +337,7 @@ button:disabled {
   gap: 12px;
   width: 100%;
   text-align: left;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line);
+  margin-bottom: 24px;
 }
 
 /* Metro tile: big content, small lowercase label bottom-left. Colour = mode. */
@@ -153,6 +352,7 @@ button:disabled {
 
 .tile.tram {
   background: var(--accent);
+  color: var(--on-accent);
 }
 
 .tile b {
@@ -170,7 +370,7 @@ button:disabled {
   position: absolute;
   left: 6px;
   bottom: 4px;
-  font-size: 11px;
+  font-size: var(--t-tiny);
   font-weight: 600;
   text-transform: lowercase;
   opacity: 0.9;
@@ -183,7 +383,7 @@ button:disabled {
 
 .dest {
   display: block;
-  font-size: 20px;
+  font-size: var(--t-item);
   font-weight: 300;
   text-transform: lowercase;
   margin-bottom: 2px;
@@ -193,6 +393,7 @@ button:disabled {
   display: flex;
   align-items: baseline;
   gap: 8px;
+  font-size: var(--t-body);
   color: var(--muted);
 }
 
@@ -211,7 +412,7 @@ button:disabled {
 .dep .left {
   margin-left: auto;
   color: var(--fg);
-  font-size: 20px;
+  font-size: var(--t-item);
   font-weight: 300;
 }
 
@@ -228,26 +429,9 @@ button:disabled {
 }
 
 .status {
-  font-size: 13px;
+  font-size: var(--t-small);
   color: var(--muted);
   margin-top: 16px;
-}
-
-/* Top-level views pivot: departures | route */
-.views {
-  display: flex;
-  gap: 16px;
-  margin-top: 4px;
-}
-
-.views button {
-  font-size: 18px;
-  text-transform: lowercase;
-  color: var(--muted);
-}
-
-.views button[aria-current='true'] {
-  color: var(--fg);
 }
 
 /* Route planner */
@@ -270,7 +454,7 @@ button:disabled {
 }
 
 .chips button {
-  font-size: 22px;
+  font-size: var(--t-item);
   font-weight: 300;
   text-transform: lowercase;
   color: var(--muted);
@@ -283,24 +467,23 @@ button:disabled {
 .saved-route {
   flex: 1;
   text-align: left;
-  font-size: 18px;
+  font-size: var(--t-body);
   font-weight: 300;
   text-transform: lowercase;
 }
 
 .trip {
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line);
+  margin-bottom: 24px;
 }
 
 .trip-head {
   margin: 0 0 8px;
-  font-size: 22px;
+  font-size: var(--t-item);
   font-weight: 300;
 }
 
 .trip-head span {
-  font-size: 15px;
+  font-size: var(--t-small);
   color: var(--muted);
 }
 
@@ -340,7 +523,7 @@ button:disabled {
 
 .results li .dist {
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--t-small);
 }
 
 .route.sm {
@@ -349,7 +532,7 @@ button:disabled {
 
 .headway {
   display: block;
-  font-size: 13px;
+  font-size: var(--t-small);
   color: var(--muted);
   margin-bottom: 2px;
 }
@@ -357,8 +540,6 @@ button:disabled {
 .acc {
   color: var(--fg);
   margin-left: 2px;
-  font-family: 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols 2', sans-serif;
-  font-variant-emoji: text;
 }
 
 .acc.part {
@@ -368,7 +549,7 @@ button:disabled {
 .repl {
   margin-left: 6px;
   padding: 0 4px;
-  font-size: 11px;
+  font-size: var(--t-tiny);
   color: #000;
   background: var(--late);
   text-transform: lowercase;
@@ -432,6 +613,17 @@ button:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .tilt {
+    transition: none;
+    transform: none;
+  }
+
+  .turn,
+  .bar-menu,
+  .views-row {
+    animation: none;
+  }
+
   .refresh span,
   .refresh i {
     animation: none;
@@ -463,7 +655,7 @@ button:disabled {
 
 .alert p {
   margin: 6px 0 0;
-  font-size: 14px;
+  font-size: var(--t-small);
   color: var(--muted);
   white-space: pre-line;
 }
@@ -471,13 +663,12 @@ button:disabled {
 .warn-mark {
   color: var(--late);
   margin-left: 8px;
-  font-size: 16px;
 }
 
 .tag {
   margin-left: 6px;
   padding: 0 4px;
-  font-size: 11px;
+  font-size: var(--t-tiny);
   text-transform: lowercase;
   white-space: nowrap;
 }
@@ -514,4 +705,28 @@ button:disabled {
 .quay-new {
   color: var(--late);
   font-weight: 700;
+}
+
+/* Settings */
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 32px;
+}
+
+.swatch {
+  aspect-ratio: 1;
+  background: var(--swatch);
+}
+
+.swatch[aria-pressed='true'] {
+  outline: 3px solid var(--fg);
+  outline-offset: 2px;
+}
+
+.about {
+  font-size: var(--t-small);
+  color: var(--muted);
+  margin: 0;
 }
