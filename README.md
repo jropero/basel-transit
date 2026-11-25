@@ -37,3 +37,19 @@ Deployed at https://ekult.co.uk/b/.
 - `OJP_TOKEN` is injected into the production bundle at build time via `define`.
   It is therefore visible to anyone who loads the app — only use a token intended
   for public clients, and rebuild after changing it. No server-side config is needed.
+
+### GitHub Actions
+
+`.github/workflows/deploy.yml` builds and deploys over SSH on every push to `main` and on demand (`gh workflow run deploy.yml`). It does not run on pull requests (the repo is public and the job holds secrets). Steps: `pnpm install --frozen-lockfile`, `vp run build` (with `OJP_TOKEN`), a sanity gate (`dist/index.html`, `dist/manifest.webmanifest` and `dist/sw.js` exist, and the built JS no longer contains the `__OJP_TOKEN__` placeholder, so the token was injected), then `rsync -az --delete --delay-updates` of `dist/` to `DEPLOY_PATH`. `--delete` makes `/b` identical to `dist/`, so the workflow refuses a `DEPLOY_PATH` that does not end in `/b`. The host key is pinned to `SSH_HOST_FP`. A failed build or gate stops the run before the deploy step, leaving the live site untouched.
+
+One-time setup (the deploy key and host values can be the same as for madrid-transit):
+
+1. `ssh-keygen -t ed25519 -f ~/.ssh/madrid_deploy -N '' -C deploy` (skip if the key already exists) and add `~/.ssh/madrid_deploy.pub` in hPanel, Advanced, SSH Access.
+2. In this repo, run:
+   - `gh secret set OJP_TOKEN`
+   - `gh secret set SSH_HOST`
+   - `gh secret set SSH_PORT`
+   - `gh secret set SSH_USER`
+   - `gh secret set SSH_KEY < ~/.ssh/madrid_deploy`
+   - `gh variable set SSH_HOST_FP --body 'SHA256:…'` (the server's ED25519 host key fingerprint from hPanel → SSH Access)
+   - `gh variable set DEPLOY_PATH --body '/home/<user>/domains/ekult.co.uk/public_html/b'`
