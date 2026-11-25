@@ -638,7 +638,6 @@ function usePivot() {
   const frame = useRef(0);
   const viewRef = useRef<View>('departures');
   const [view, setView] = useState<View>('departures');
-  const [turn, setTurn] = useState<View | null>(null);
 
   const onScroll = () => {
     if (frame.current) return;
@@ -650,7 +649,6 @@ function usePivot() {
       viewRef.current = next;
       syncHistory(next);
       setView(next);
-      setTurn(next);
     });
   };
 
@@ -669,7 +667,7 @@ function usePivot() {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  return { scroller, view, turn, onScroll, goTo };
+  return { scroller, view, onScroll, goTo };
 }
 
 // Big lowercase headers, looping like a Windows Phone pivot: the active one comes first,
@@ -716,16 +714,17 @@ function PivotHeader({ view, onSelect }: { view: View; onSelect: (v: View) => vo
 export default function App() {
   const [stops, setStops] = useState<Stop[]>(loadStops);
   const [selected, setSelected] = useState<Stop>(stops[0]);
-  const { scroller, view, turn, onScroll, goTo } = usePivot();
+  const { scroller, view, onScroll, goTo } = usePivot();
 
   function updateStops(next: Stop[]) {
     setStops(next);
     saveStops(next);
   }
 
+  // Turnstile plays once on first load (initial pane only); pivot changes just slide.
   const pane = (v: View, children: React.ReactNode) => (
     <section className="pane" aria-label={v} inert={view !== v}>
-      <div className={turn === v ? 'pane-in turn' : 'pane-in'}>{children}</div>
+      <div className={v === 'departures' ? 'pane-in turn' : 'pane-in'}>{children}</div>
     </section>
   );
 
