@@ -160,12 +160,23 @@ function prefetchMissing(ref: string, onLoaded: (g: Record<string, OnwardGroup>)
   void prefetchOnward(ref).then(g => g && onLoaded(g));
 }
 
+// Soonest actual departure first (delays included), timetabled time breaks ties.
+const byExpected = (a: Departure, b: Departure) =>
+  a.expected.getTime() - b.expected.getTime() || a.planned.getTime() - b.planned.getTime();
+{
+  const at = (h: number, m: number) => new Date(2026, 0, 1, h, m);
+  const late = { planned: at(14, 58), expected: at(15, 19) } as Departure;
+  const onTime = { planned: at(15, 9), expected: at(15, 9) } as Departure;
+  console.assert([late, onTime].sort(byExpected)[0] === onTime, 'byExpected');
+}
+
 function groupByDirection(deps: Departure[]) {
   const groups = new Map<string, Departure[]>();
   for (const d of deps) {
     const key = groupKey(d);
     groups.set(key, [...(groups.get(key) ?? []), d]);
   }
+  for (const list of groups.values()) list.sort(byExpected);
   return [...groups.entries()].sort(([a], [b]) =>
     a.localeCompare(b, undefined, { numeric: true }),
   );
