@@ -22,6 +22,8 @@ Set `OJP_TOKEN` in `.env`, then run `pnpm dev`. The dev server proxies `/ojp` to
 Swiss OJP API and injects the token, so it never reaches the browser during development.
 With `base: "/b/"`, the app is served locally at http://localhost:5173/b/.
 
+Weather in the stop title: [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0), credited in Settings ("Weather: Open-Meteo.com (CC BY 4.0)").
+
 ## Deployment
 
 Deployed at https://ekult.co.uk/b/.

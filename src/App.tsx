@@ -8,6 +8,7 @@ import {
   headway,
   headwayApplies,
   hhmm,
+  knownCoords,
   loadJson,
   loadStops,
   nearbyStops,
@@ -34,6 +35,7 @@ import AppBar from './AppBar.tsx';
 import Settings from './Settings.tsx';
 import RefreshBar, { REFRESH_MS } from './RefreshBar.tsx';
 import RoutePlanner from './Route.tsx';
+import { WeatherMark } from './Weather.tsx';
 
 type Departure = {
   line: string;
@@ -554,6 +556,14 @@ function Departures({
 
   const isSaved = (s: Stop) => stops.some(x => x.ref === s.ref);
 
+  // Saved stops often lack coordinates: the known-stops directory (filled by every response,
+  // including the departures one, hence `loadedAt`) has them.
+  const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
+  useEffect(() => {
+    const { lat, lon, ref } = selected;
+    setCoords(lat && lon ? { lat, lon } : knownCoords(ref));
+  }, [selected, loadedAt]);
+
   const now = useNow();
   const groups = visibleGroups(deps, offline !== null, onward, now);
 
@@ -586,7 +596,10 @@ function Departures({
         />
       )}
       <StopsRow stops={stops} selected={selected} onSelect={selectStop} />
-      <h2 className="title">{short(selected.name)}</h2>
+      <div className="title-row">
+        <h2 className="title">{short(selected.name)}</h2>
+        <WeatherMark lat={coords?.lat} lon={coords?.lon} />
+      </div>
 
       {showSearch && (
         <SearchPanel

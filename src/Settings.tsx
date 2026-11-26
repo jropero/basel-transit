@@ -24,7 +24,11 @@ export default function Settings() {
       <h2 className="title">about</h2>
       <p className="about">
         Departures and routes from opentransportdata.swiss (OJP 2.0). Type: Selawik (SIL OFL).
-        Icons: Fluent UI System Icons (MIT).
+        Icons: Fluent UI System Icons (MIT). Weather:{' '}
+        <a href="https://open-meteo.com/" target="_blank" rel="noopener">
+          Open-Meteo.com
+        </a>{' '}
+        (CC BY 4.0).
       </p>
     </>
   );
