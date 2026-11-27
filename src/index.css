@@ -234,6 +234,98 @@ button {
   color: var(--muted);
 }
 
+/* Stop info button (inside the title), panel, line list and nearby stops */
+.info-btn {
+  margin-left: 8px;
+  padding: 0;
+  color: var(--muted);
+  vertical-align: middle;
+}
+
+.info-btn[aria-expanded='true'] {
+  color: var(--accent);
+}
+
+.info {
+  margin: 0 0 16px;
+  font-size: var(--t-small);
+}
+
+.info h3 {
+  font-size: var(--t-body);
+  font-weight: 600;
+  text-transform: lowercase;
+  margin: 16px 0 8px;
+}
+
+.facts {
+  margin: 0;
+}
+
+.facts div {
+  display: flex;
+  gap: 12px;
+}
+
+.facts dt {
+  flex: 0 0 96px;
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.info a {
+  color: var(--accent);
+}
+
+.svc-list,
+.near {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.svc-list li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.tile.mini {
+  flex: 0 0 36px;
+  height: 36px;
+}
+
+.tile.mini b {
+  inset: 0;
+  font-size: 18px;
+}
+
+.tile.mini.long b {
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.near .link {
+  display: block;
+  text-align: left;
+  padding: 6px 0;
+}
+
+.near .name {
+  display: block;
+  text-transform: lowercase;
+}
+
+.near .sub {
+  display: block;
+  color: var(--muted);
+}
+
 /* Saved stops: a small scrollable row; inner horizontal scroll must not hijack the page swipe. */
 .stops {
   display: flex;

@@ -95,14 +95,16 @@ export const all = (el: Element | Document, tag: string) => [
   ...el.getElementsByTagNameNS('*', tag),
 ];
 
+const placeOf = (p: Element): Stop => ({
+  ref: text(p, 'StopPlaceRef'),
+  name: text(p, 'StopPlaceName'),
+  lat: Number(text(p, 'Latitude')) || undefined,
+  lon: Number(text(p, 'Longitude')) || undefined,
+});
+
 export const parseStops = (doc: Document): Stop[] =>
   all(doc, 'PlaceResult')
-    .map(p => ({
-      ref: text(p, 'StopPlaceRef'),
-      name: text(p, 'StopPlaceName'),
-      lat: Number(text(p, 'Latitude')) || undefined,
-      lon: Number(text(p, 'Longitude')) || undefined,
-    }))
+    .map(placeOf)
     .filter(s => s.ref);
 
 // Equirectangular approximation: fine at city scale.
@@ -705,6 +707,67 @@ export const knownCoords = (ref: string): { lat: number; lon: number } | null =>
   const k = loadJson<Known>(PLACES_KEY, {})[ref];
   return k ? { lat: k.lat, lon: k.lon } : null;
 };
+
+// "ch:1:sloid:89303" -> "89303" (the number shown as the stop code); '' for another ref format.
+export const sloidNumber = (ref: string) => /sloid:(\d+)/.exec(ref)?.[1] ?? '';
+console.assert(
+  sloidNumber('ch:1:sloid:89303') === '89303' && sloidNumber('x') === '',
+  'sloidNumber',
+);
+
+// Stops around one stop from a LocationInformationRequest: each with its distance and the
+// modes it serves (PtMode of the Place), nearest first, without the stop itself.
+export type NearbyStop = Stop & { dist: number; modes: string[] };
+export function parseNearby(doc: Document, here: Stop & { lat: number; lon: number }) {
+  const out: NearbyStop[] = [];
+  for (const p of all(doc, 'PlaceResult')) {
+    const s = placeOf(p);
+    if (!s.ref || !s.lat || !s.lon || s.ref === here.ref) continue;
+    const modes = [...new Set(all(p, 'PtMode').map(m => m.textContent?.trim() ?? ''))];
+    out.push({
+      ...s,
+      dist: metres(here, { lat: s.lat, lon: s.lon }),
+      modes: modes.filter(Boolean),
+    });
+  }
+  return out.sort((a, b) => a.dist - b.dist);
+}
+if (typeof DOMParser !== 'undefined') {
+  const place = (ref: string, lon: number, mode: string) =>
+    `<PlaceResult><Place><StopPlace><StopPlaceRef>${ref}</StopPlaceRef><StopPlaceName><Text>Basel, ${ref}</Text></StopPlaceName></StopPlace>` +
+    `<GeoPosition><Longitude>${lon}</Longitude><Latitude>47.5</Latitude></GeoPosition><Mode><PtMode>${mode}</PtMode></Mode><Mode><PtMode>${mode}</PtMode></Mode></Place></PlaceResult>`;
+  const doc = parseXml(
+    `<R xmlns="x">${place('far', 7.51, 'bus')}${place('me', 7.5, 'tram')}${place('near', 7.5005, 'tram')}</R>`,
+  );
+  const out = parseNearby(doc, { ref: 'me', name: 'me', lat: 47.5, lon: 7.5 });
+  console.assert(
+    out.length === 2 &&
+      out[0].ref === 'near' &&
+      out[0].modes.join() === 'tram' &&
+      out[0].dist > 30 &&
+      out[0].dist < 40,
+    'parseNearby',
+  );
+}
+
+const NEARBY_RADIUS = 300;
+const NEARBY_MAX = 6;
+const nearbyMemo = new Map<string, Promise<NearbyStop[]>>();
+
+// Other stops within ~300 m (max 6), memoised per stop for the session; a failure is not memoised.
+export function fetchNearby(here: Stop & { lat: number; lon: number }): Promise<NearbyStop[]> {
+  const memo = nearbyMemo.get(here.ref);
+  if (memo) return memo;
+  const p = ojp(nearBody(here.lat, here.lon, NEARBY_RADIUS)).then(doc => {
+    rememberPlaces(parseStops(doc));
+    return parseNearby(doc, here)
+      .filter(s => s.dist <= NEARBY_RADIUS)
+      .slice(0, NEARBY_MAX);
+  });
+  nearbyMemo.set(here.ref, p);
+  p.catch(() => nearbyMemo.delete(here.ref));
+  return p;
+}
 
 // Current weather (Open-Meteo, no key) per coordinate rounded to 2 decimals (~1 km), so nearby
 // stops share one request and the exact stop is not sent. Memoised 15 min; the last answer per

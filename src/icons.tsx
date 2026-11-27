@@ -1,6 +1,7 @@
 // Fluent UI System Icons (24 regular), vendored path data. © Microsoft Corporation, MIT.
 // https://github.com/microsoft/fluentui-system-icons (see icons.LICENSE.txt)
 const PATHS = {
+  info: 'M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20m0 1.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17m-.01 7a.75.75 0 0 1 .75.65l.01.1v5.5a.75.75 0 0 1-1.5.1l-.01-.1v-5.5c0-.41.34-.75.75-.75M12 7a1 1 0 1 1 0 2 1 1 0 0 1 0-2',
   refresh:
     'M12 4.5a7.5 7.5 0 1 0 7.42 6.4c-.07-.46.26-.9.72-.9.37 0 .7.26.76.62q.1.67.1 1.38a9 9 0 1 1-3-6.7V4.24a.75.75 0 0 1 1.5 0v3c0 .41-.34.75-.75.75h-3a.75.75 0 0 1 0-1.5h1.35a7.5 7.5 0 0 0-5.1-2',
   search:

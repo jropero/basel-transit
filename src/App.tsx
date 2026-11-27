@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
   access,
   all,
@@ -40,11 +40,12 @@ import { useStopNav, type Nav } from './nav.ts';
 import { FollowTrip, StopLink, TownRow, TripPicker, type FollowEnv } from './Follow.tsx';
 import RefreshBar, { REFRESH_MS } from './RefreshBar.tsx';
 import RoutePlanner from './Route.tsx';
+import { InfoButton, StopInfo, useInfoToggle } from './StopInfo.tsx';
 import { WeatherMark } from './Weather.tsx';
 
 // `to` is the row label: the destination, or "from <origin>" on the arrivals board, where `dir`
 // is the origin (groups are line + origin there, line + direction on departures).
-type Departure = {
+export type Departure = {
   line: string;
   dir: string;
   mode: string;
@@ -809,6 +810,9 @@ function Departures({
     setCoords(lat && lon ? { lat, lon } : knownCoords(ref));
   }, [selected, loadedAt]);
 
+  const [infoOpen, toggleInfo] = useInfoToggle(selected.ref);
+  const infoId = useId();
+
   const now = useNow();
   const groups = visibleGroups(deps, offline !== null, arrivals ? null : onward, now);
   const [sort, setSort] = useSortMode();
@@ -847,9 +851,22 @@ function Departures({
       <StopsRow stops={stops} selected={selected} onSelect={selectStop} />
       <Trail trail={nav.trail ?? []} />
       <div className="title-row">
-        <h2 className="title">{short(selected.name)}</h2>
+        <h2 className="title">
+          {short(selected.name)}
+          <InfoButton open={infoOpen} panelId={infoId} onToggle={toggleInfo} />
+        </h2>
         <WeatherMark lat={coords?.lat} lon={coords?.lon} />
       </div>
+      {infoOpen && (
+        <StopInfo
+          id={infoId}
+          stop={selected}
+          coords={coords}
+          deps={loading && !deps.length ? null : deps}
+          situations={situations}
+          onJump={jumpTo}
+        />
+      )}
 
       {showSearch && (
         <SearchPanel
