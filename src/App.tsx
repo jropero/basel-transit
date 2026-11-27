@@ -23,6 +23,7 @@ import {
   saveStops,
   searchStops,
   short,
+  splitTown,
   situationRefs,
   text,
   townHeadings,
@@ -615,6 +616,17 @@ const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)'
 const backAction = (trail: unknown[]): BarAction[] =>
   trail.length < 2 ? [] : [{ icon: 'back', label: 'Back', onClick: () => history.back() }];
 
+// "Burgfelderplatz Basel": the stop, then its town muted (names repeat across towns).
+function StopTitle({ name }: { name: string }) {
+  const { town, stop } = splitTown(name);
+  if (!town) return short(name);
+  return (
+    <>
+      {stop} <span className="title-town">{town}</span>
+    </>
+  );
+}
+
 function StopsRow({
   stops,
   selected,
@@ -852,7 +864,7 @@ function Departures({
       <Trail trail={nav.trail ?? []} />
       <div className="title-row">
         <h2 className="title">
-          {short(selected.name)}
+          <StopTitle name={selected.name} />
           <InfoButton open={infoOpen} panelId={infoId} onToggle={toggleInfo} />
         </h2>
         <WeatherMark lat={coords?.lat} lon={coords?.lon} />

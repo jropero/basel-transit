@@ -217,6 +217,10 @@ button {
   margin: 0;
 }
 
+.title-row .title-town {
+  color: var(--muted);
+}
+
 .weather {
   display: inline-flex;
   flex: none;
@@ -234,12 +238,20 @@ button {
   color: var(--muted);
 }
 
-/* Stop info button (inside the title), panel, line list and nearby stops */
+/* Stop info button (inside the title), panel, line list and nearby stops. The button is
+   centred on the title's x-height: the svg sits on the baseline of a zero-height line box. */
 .info-btn {
+  display: inline-flex;
+  align-items: center;
   margin-left: 8px;
   padding: 0;
+  line-height: 0;
   color: var(--muted);
   vertical-align: middle;
+}
+
+.info-btn .icon {
+  vertical-align: baseline;
 }
 
 .info-btn[aria-expanded='true'] {
