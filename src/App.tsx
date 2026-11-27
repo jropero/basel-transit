@@ -37,6 +37,8 @@ import RefreshBar, { REFRESH_MS } from './RefreshBar.tsx';
 import RoutePlanner from './Route.tsx';
 import { WeatherMark } from './Weather.tsx';
 
+// `to` is the row label: the destination, or "from <origin>" on the arrivals board, where `dir`
+// is the origin (groups are line + origin there, line + direction on departures).
 type Departure = {
   line: string;
   dir: string;
@@ -52,34 +54,74 @@ type Departure = {
   replacement: boolean;
 };
 
-const departuresBody = (ref: string, onward = false) =>
+const departuresBody = (ref: string, onward = false, arrivals = false) =>
   envelope(`<OJPStopEventRequest>
       <siri:RequestTimestamp>${new Date().toISOString()}</siri:RequestTimestamp>
       <Location><PlaceRef><StopPlaceRef>${escapeXml(ref)}</StopPlaceRef></PlaceRef></Location>
       <Params>
         <NumberOfResults>${onward ? 100 : 30}</NumberOfResults>
-        <StopEventType>departure</StopEventType>${onward ? '\n        <IncludeOnwardCalls>true</IncludeOnwardCalls>' : ''}
+        <StopEventType>${arrivals ? 'arrival' : 'departure'}</StopEventType>${onward ? '\n        <IncludeOnwardCalls>true</IncludeOnwardCalls>' : ''}
         <IncludeRealtimeData>true</IncludeRealtimeData>
       </Params>
     </OJPStopEventRequest>`);
 
-const parseDepartures = (doc: Document): Departure[] =>
+// "from <origin>" label of an arrival; the origin also groups them.
+const fromLabel = (origin: string) => (origin ? `from ${origin}` : 'origin unknown');
+console.assert(
+  fromLabel('Basel, Bahnhof SBB') === 'from Basel, Bahnhof SBB' &&
+    fromLabel('') === 'origin unknown',
+  'fromLabel',
+);
+
+// Departures use ServiceDeparture of ThisCall, arrivals ServiceArrival (the stop's own times).
+const parseDepartures = (doc: Document, arrivals = false): Departure[] =>
   all(doc, 'StopEvent').map(ev => {
-    const planned = text(ev, 'TimetabledTime');
     const here = all(ev, 'ThisCall')[0];
+    const at = all(here, arrivals ? 'ServiceArrival' : 'ServiceDeparture')[0] ?? here;
+    const planned = text(at, 'TimetabledTime');
+    const origin = text(ev, 'OriginText');
     return {
       line: text(ev, 'PublishedServiceName'),
-      dir: text(ev, 'DirectionRef'),
+      dir: arrivals ? origin : text(ev, 'DirectionRef'),
       mode: text(ev, 'PtMode'),
-      to: text(ev, 'DestinationText'),
+      to: arrivals ? fromLabel(origin) : text(ev, 'DestinationText'),
       ...flags(ev, here),
       alerts: situationRefs(ev),
       planned: new Date(planned),
-      expected: new Date(text(ev, 'EstimatedTime') || planned),
+      expected: new Date(text(at, 'EstimatedTime') || planned),
       access: access(ev, here),
       replacement: replacement(here),
     };
   });
+
+if (typeof DOMParser !== 'undefined') {
+  const ev = (call: string) =>
+    new DOMParser().parseFromString(
+      `<R xmlns="x"><StopEvent><ThisCall><CallAtStop>${call}</CallAtStop></ThisCall><Service><DirectionRef>R</DirectionRef>` +
+        `<PublishedServiceName><Text>3</Text></PublishedServiceName><OriginText><Text>Birsfelden, Hard</Text></OriginText>` +
+        `<DestinationText><Text>Basel, Bahnhof SBB</Text></DestinationText></Service></StopEvent></R>`,
+      'application/xml',
+    );
+  const arr = parseDepartures(
+    ev(
+      '<ServiceArrival><TimetabledTime>2026-11-27T11:10:00Z</TimetabledTime><EstimatedTime>2026-11-27T11:11:00Z</EstimatedTime></ServiceArrival>',
+    ),
+    true,
+  )[0];
+  const dep = parseDepartures(
+    ev(
+      '<ServiceDeparture><TimetabledTime>2026-11-27T11:10:00Z</TimetabledTime></ServiceDeparture>',
+    ),
+  )[0];
+  console.assert(
+    arr.to === 'from Birsfelden, Hard' &&
+      arr.dir === 'Birsfelden, Hard' &&
+      arr.expected.getTime() - arr.planned.getTime() === 60_000 &&
+      dep.to === 'Basel, Bahnhof SBB' &&
+      dep.dir === 'R',
+    'parseDepartures arrivals',
+  );
+}
 
 const groupKey = (d: { line: string; dir: string }) => `${d.line}|${d.dir}`;
 
@@ -416,8 +458,21 @@ function updateBadge(situations: Situation[], deps: Departure[]) {
   }
 }
 
+async function fetchBoard(ref: string, arrivals: boolean) {
+  const { doc, offlineSince } = await ojpCached(
+    `${arrivals ? 'arrs' : 'deps'}:${ref}`,
+    departuresBody(ref, false, arrivals),
+  );
+  return {
+    doc,
+    offlineSince,
+    parsed: parseDepartures(doc, arrivals),
+    sits: parseSituations(doc),
+  };
+}
+
 // Departures for one stop: loads on stop change, refreshes 15s after each load and when back online.
-function useDepartures(ref: string, active: boolean) {
+function useDepartures(ref: string, active: boolean, arrivals: boolean) {
   const [deps, setDeps] = useState<Departure[]>([]);
   const [status, setStatus] = useState('Loading…');
   const [onward, setOnward] = useState<Record<string, OnwardGroup> | null>(null);
@@ -434,28 +489,30 @@ function useDepartures(ref: string, active: boolean) {
     setStatus('Loading…');
     setLoading(true);
     try {
-      const { doc, offlineSince } = await ojpCached(`deps:${ref}`, departuresBody(ref));
-      const parsed = parseDepartures(doc);
-      const sits = parseSituations(doc);
+      const { doc, offlineSince, parsed, sits } = await fetchBoard(ref, arrivals);
       setDeps(parsed);
       setSituations(sits);
       updateBadge(sits, parsed);
       setOffline(offlineSince);
-      setOnward(loadOnward(ref, offlineSince !== null));
+      setOnward(arrivals ? null : loadOnward(ref, offlineSince !== null));
       setStatus(
         offlineSince ? `offline · from ${hhmm(offlineSince)}` : `updated ${hhmm(new Date())}`,
       );
-      if (!offlineSince) {
-        rememberDoc(doc);
+      if (!offlineSince) rememberDoc(doc);
+      if (!offlineSince && !arrivals)
         prefetchMissing(ref, g => current.current === ref && setOnward(g));
-      }
     } catch (err) {
       setStatus(String(err));
     } finally {
       setLoading(false);
       setLoadedAt(Date.now());
     }
-  }, [ref]);
+  }, [ref, arrivals]);
+
+  // The other board's rows must not linger while this one loads.
+  useEffect(() => {
+    setDeps([]);
+  }, [arrivals]);
 
   useEffect(() => {
     void load();
@@ -541,6 +598,27 @@ function useSortMode() {
   return [sort, choose] as const;
 }
 
+type Board = 'departures' | 'arrivals';
+const BOARDS: Board[] = ['departures', 'arrivals'];
+
+// Departures or arrivals of the stop. Kept while browsing stops, not across reloads.
+function BoardSwitch(p: { board: Board; onBoard: (b: Board) => void }) {
+  return (
+    <div className="board-mode" role="group" aria-label="Departures or arrivals">
+      {BOARDS.map(b => (
+        <button
+          key={b}
+          className="btn tilt"
+          aria-pressed={p.board === b}
+          onClick={() => p.onBoard(b)}
+        >
+          {b}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // Switch between grouping departures by line and one list by time.
 function SortSwitch(p: { show: boolean; sort: SortMode; onSort: (m: SortMode) => void }) {
   if (!p.show) return null;
@@ -592,6 +670,8 @@ function Departures({
   const [results, setResults] = useState<(Stop & { dist?: number })[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
+  const [board, setBoard] = useState<Board>('departures');
+  const arrivals = board === 'arrivals';
   const {
     deps,
     status,
@@ -604,7 +684,7 @@ function Departures({
     loading,
     offline,
     load,
-  } = useDepartures(selected.ref, active);
+  } = useDepartures(selected.ref, active, arrivals);
 
   // Switching stops resets the open line and its onward stops; the load effect refetches.
   function selectStop(s: Stop) {
@@ -663,7 +743,7 @@ function Departures({
   }, [selected, loadedAt]);
 
   const now = useNow();
-  const groups = visibleGroups(deps, offline !== null, onward, now);
+  const groups = visibleGroups(deps, offline !== null, arrivals ? null : onward, now);
   const [sort, setSort] = useSortMode();
   // Offline the cached list still holds departures that have left.
   const upcoming = offline !== null ? deps.filter(d => d.expected.getTime() > now) : deps;
@@ -720,6 +800,13 @@ function Departures({
 
       <Alerts situations={situations} ids={deps.flatMap(d => d.alerts)} />
 
+      <BoardSwitch
+        board={board}
+        onBoard={b => {
+          setBoard(b);
+          setOpen(null);
+        }}
+      />
       <SortSwitch show={deps.length > 0} sort={sort} onSort={setSort} />
 
       {sort === 'time' ? (
@@ -733,7 +820,7 @@ function Departures({
             isOpen={open === key}
             offline={offline !== null}
             now={now}
-            onToggle={() => toggle(key)}
+            onToggle={arrivals ? undefined : () => toggle(key)}
           />
         ))
       )}
