@@ -442,6 +442,149 @@ if (typeof DOMParser !== 'undefined') {
   );
 }
 
+// Follow a vehicle: OJPTripInfoRequest returns every call of one journey (PreviousCall, OnwardCall in
+// `Order`), with ServiceArrival / ServiceDeparture timetabled and estimated times. There is no
+// CurrentPosition, so the position is derived from the times (`tripProgress`).
+export const tripInfoBody = (journey: string, day: string) =>
+  envelope(`<OJPTripInfoRequest>
+      <siri:RequestTimestamp>${new Date().toISOString()}</siri:RequestTimestamp>
+      <JourneyRef>${escapeXml(journey)}</JourneyRef>
+      <OperatingDayRef>${escapeXml(day)}</OperatingDayRef>
+      <Params><IncludeCalls>true</IncludeCalls><IncludeService>true</IncludeService></Params>
+    </OJPTripInfoRequest>`);
+
+export type Stamp = { planned: Date; expected: Date; live: boolean };
+export type TripCall = {
+  ref: string;
+  name: string;
+  order: number;
+  arr: Stamp | null;
+  dep: Stamp | null;
+};
+
+// Quay-level StopPointRef ("ch:1:sloid:89303:2:4") -> the stop place ("ch:1:sloid:89303").
+export const placeRef = (ref: string) => ref.replace(/^(ch:1:sloid:\d+):.*$/, '$1');
+console.assert(
+  placeRef('ch:1:sloid:89303:2:4') === 'ch:1:sloid:89303' &&
+    placeRef('ch:1:sloid:89303') === 'ch:1:sloid:89303' &&
+    placeRef('ch:1:sloid:1401858:1:1') === 'ch:1:sloid:1401858',
+  'placeRef',
+);
+
+function stamp(el: Element | undefined): Stamp | null {
+  const planned = el ? text(el, 'TimetabledTime') : '';
+  if (!el || !planned) return null;
+  const estimated = text(el, 'EstimatedTime');
+  return {
+    planned: new Date(planned),
+    expected: new Date(estimated || planned),
+    live: estimated !== '',
+  };
+}
+
+const CALL_TAGS = new Set(['PreviousCall', 'CurrentCall', 'OnwardCall']);
+
+// All calls of the journey in order; an error answer (HTTP 200 with an ErrorCondition) has none.
+export function parseTripInfo(doc: Document): TripCall[] {
+  const result = all(doc, 'TripInfoResult')[0];
+  if (!result) return [];
+  return [...result.children]
+    .filter(c => CALL_TAGS.has(c.localName))
+    .map(c => ({
+      ref: placeRef(text(c, 'StopPointRef')),
+      name: text(c, 'StopPointName'),
+      order: Number(text(c, 'Order')) || 0,
+      arr: stamp(all(c, 'ServiceArrival')[0]),
+      dep: stamp(all(c, 'ServiceDeparture')[0]),
+    }))
+    .sort((a, b) => a.order - b.order);
+}
+
+// Where the vehicle is: `index` = the call it is at / arriving at / heading to ("between" = past
+// the previous call). Estimated times, else timetabled; the first call has no arrival.
+export type Progress = { index: number; state: 'at' | 'arriving' | 'between' };
+const ARRIVING_MS = 60_000;
+const arriveMs = (c: TripCall) => (c.arr ?? c.dep)?.expected.getTime() ?? NaN;
+const leaveMs = (c: TripCall) => (c.dep ?? c.arr)?.expected.getTime() ?? NaN;
+
+function progressAt(
+  c: TripCall,
+  next: TripCall | undefined,
+  index: number,
+  now: number,
+): Progress | null {
+  const arrive = arriveMs(c);
+  const leave = leaveMs(c);
+  if (index > 0 && now >= arrive - ARRIVING_MS && now < arrive)
+    return { index, state: 'arriving' };
+  if (now >= arrive && now < leave) return { index, state: 'at' };
+  if (next && now >= leave && now < arriveMs(next) - ARRIVING_MS)
+    return { index: index + 1, state: 'between' };
+  return null;
+}
+
+export function tripProgress(calls: TripCall[], now: number): Progress | null {
+  for (const [i, c] of calls.entries()) {
+    const found = progressAt(c, calls[i + 1], i, now);
+    if (found) return found;
+  }
+  return null;
+}
+
+// Time shown for a call: departure, the last call only has an arrival.
+export const callStamp = (c: TripCall) => c.dep ?? c.arr;
+
+// Whole minutes a time runs late (never negative).
+export const lateMinutes = (s: Stamp | null) =>
+  s ? Math.max(0, Math.round((s.expected.getTime() - s.planned.getTime()) / 60000)) : 0;
+
+if (typeof DOMParser !== 'undefined') {
+  const t = (h: number, m: number) => `2026-11-27T${String(h).padStart(2, '0')}:${m}:00Z`;
+  const st = (tag: string, plan: string, est?: string) =>
+    `<${tag}><TimetabledTime>${plan}</TimetabledTime>${est ? `<EstimatedTime>${est}</EstimatedTime>` : ''}</${tag}>`;
+  const call = (kind: string, ref: string, order: number, calls: string) =>
+    `<${kind}><siri:StopPointRef>${ref}</siri:StopPointRef><StopPointName><Text>S${order}</Text></StopPointName>${calls}<Order>${order}</Order></${kind}>`;
+  const doc = parseXml(
+    `<R xmlns="x" xmlns:siri="y"><TripInfoResult>` +
+      call(
+        'OnwardCall',
+        'ch:1:sloid:2:1:1',
+        2,
+        st('ServiceArrival', t(10, 5)) + st('ServiceDeparture', t(10, 6), t(10, 7)),
+      ) +
+      call('PreviousCall', 'ch:1:sloid:1:1:1', 1, st('ServiceDeparture', t(10, 0), t(10, 1))) +
+      call('OnwardCall', 'ch:1:sloid:3:1:1', 3, st('ServiceArrival', t(10, 10), t(10, 11))) +
+      `</TripInfoResult></R>`,
+  );
+  const calls = parseTripInfo(doc);
+  const at = (h: number, m: number, s = 0) => Date.UTC(2026, 10, 27, h, m, s);
+  const prog = (ms: number) => {
+    const p = tripProgress(calls, ms);
+    return p ? `${p.index}${p.state}` : '-';
+  };
+  console.assert(
+    calls.map(c => c.ref).join() === 'ch:1:sloid:1,ch:1:sloid:2,ch:1:sloid:3' &&
+      calls[0].arr === null &&
+      calls[0].dep?.live === true &&
+      calls[2].dep === null &&
+      lateMinutes(callStamp(calls[1])) === 1 &&
+      lateMinutes(callStamp(calls[2])) === 1 &&
+      parseTripInfo(parseXml('<R xmlns="x"><ErrorCondition/></R>')).length === 0,
+    'parseTripInfo',
+  );
+  // Estimated times: 1 dep 10:01, 2 arr 10:05 dep 10:07, 3 arr 10:11.
+  console.assert(
+    prog(at(9, 59)) === '-' &&
+      prog(at(10, 2)) === '1between' &&
+      prog(at(10, 4, 30)) === '1arriving' &&
+      prog(at(10, 6)) === '1at' &&
+      prog(at(10, 8)) === '2between' &&
+      prog(at(10, 10, 30)) === '2arriving' &&
+      prog(at(10, 11, 30)) === '-',
+    'tripProgress',
+  );
+}
+
 export function loadJson<T>(key: string, fallback: T): T {
   try {
     const v = JSON.parse(localStorage.getItem(key) ?? 'null');

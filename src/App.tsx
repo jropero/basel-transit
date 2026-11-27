@@ -33,6 +33,7 @@ import AccessMark, { Diverted, QuayMark } from './Access.tsx';
 import Alerts, { AlertMark, relevantSituations } from './Alerts.tsx';
 import AppBar from './AppBar.tsx';
 import Settings from './Settings.tsx';
+import { FollowTrip, TripPicker, type FollowEnv } from './Follow.tsx';
 import RefreshBar, { REFRESH_MS } from './RefreshBar.tsx';
 import RoutePlanner from './Route.tsx';
 import { WeatherMark } from './Weather.tsx';
@@ -52,6 +53,8 @@ type Departure = {
   expected: Date;
   access: Access;
   replacement: boolean;
+  journey: string;
+  day: string;
 };
 
 const departuresBody = (ref: string, onward = false, arrivals = false) =>
@@ -91,6 +94,8 @@ const parseDepartures = (doc: Document, arrivals = false): Departure[] =>
       expected: new Date(text(at, 'EstimatedTime') || planned),
       access: access(ev, here),
       replacement: replacement(here),
+      journey: text(ev, 'JourneyRef'),
+      day: text(ev, 'OperatingDayRef'),
     };
   });
 
@@ -335,13 +340,45 @@ function OnwardStops({ g, offline }: { g: OnwardGroup | undefined; offline: bool
   ));
 }
 
-// Without `onToggle` (by time) the group is a plain row: no onward stops to open.
+// The open group: pick a departure and follow its journey; the cached onward stops stand in when
+// the journey can't be fetched.
+function OpenGroup({
+  list,
+  g,
+  offline,
+  now,
+  env,
+}: {
+  list: Departure[];
+  g: OnwardGroup | undefined;
+  offline: boolean;
+  now: number;
+  env: FollowEnv;
+}) {
+  const [picked, setPicked] = useState('');
+  const dep = list.find(d => d.journey === picked) ?? list[0];
+  const onward = (
+    <ul className="route">
+      <OnwardStops g={g} offline={offline} />
+    </ul>
+  );
+  if (!dep?.journey) return onward;
+  return (
+    <>
+      <TripPicker list={list} selected={dep.journey} onPick={setPicked} />
+      <FollowTrip key={dep.journey} dep={dep} env={env} now={now} fallback={onward} />
+    </>
+  );
+}
+
+// Without `onToggle` (by time) the group is a plain row: no stops to open.
 function LineGroup({
   list,
   g,
   isOpen,
   offline,
   now,
+  env,
   onToggle,
 }: {
   list: Departure[];
@@ -349,6 +386,7 @@ function LineGroup({
   isOpen: boolean;
   offline: boolean;
   now: number;
+  env?: FollowEnv;
   onToggle?: () => void;
 }) {
   const body = <GroupBody list={list} g={g} offline={offline} now={now} />;
@@ -361,11 +399,7 @@ function LineGroup({
       ) : (
         <div className="group">{body}</div>
       )}
-      {isOpen && (
-        <ul className="route">
-          <OnwardStops g={g} offline={offline} />
-        </ul>
-      )}
+      {isOpen && env && <OpenGroup list={list} g={g} offline={offline} now={now} env={env} />}
     </section>
   );
 }
@@ -709,7 +743,7 @@ function Departures({
   async function toggle(key: string) {
     if (open === key) return setOpen(null);
     setOpen(key);
-    if (onward?.[key]) return;
+    if (arrivals || onward?.[key]) return;
     const ref = selected.ref;
     try {
       const fresh = await fetchOnward(ref);
@@ -820,7 +854,8 @@ function Departures({
             isOpen={open === key}
             offline={offline !== null}
             now={now}
-            onToggle={arrivals ? undefined : () => toggle(key)}
+            env={{ active, here: selected.ref }}
+            onToggle={() => toggle(key)}
           />
         ))
       )}
