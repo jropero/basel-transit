@@ -12,7 +12,7 @@ Check trams and buses in Basel. It's a small React + TypeScript PWA on [Vite+](h
 - **Auto-refresh:** departures and the open route refresh every 15s while visible. A thin Metro-style bar at the top counts down, and dots fly across while it loads.
 - **Offline:** the installed PWA opens offline and shows the last-known departures, trips, line stops and alerts, hiding anything that has already left. Search and near me use the stops seen so far.
 - **Metro UI:** swipe between departures, route and settings. A bottom app bar with round icons, tilt on press, turnstile transitions and a choice of 20 Windows Phone accent colours. Selawik font and Fluent icons.
-- **Installable:** works as an installable PWA ("Add to Home Screen"), always in dark mode. The app icon shows a badge with the number of active alerts where supported.
+- **Installable:** works as an installable PWA ("Add to Home Screen"), in dark or light mode (Settings: theme auto / light / dark). The app icon shows a badge with the number of active alerts where supported.
 
 Notes for coding agents (layout, OJP API quirks, rules) are in [AGENTS.md](AGENTS.md).
 

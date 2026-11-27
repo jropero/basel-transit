@@ -3,9 +3,11 @@ import './index.css';
 import App from './App.tsx';
 import { applyAccent, loadAccent } from './accent.ts';
 import { registerTilt } from './motion.ts';
+import { applyTheme, loadTheme } from './theme.ts';
 
 // Before the first render, so the saved accent never flashes the default.
 applyAccent(loadAccent(), false);
+applyTheme(loadTheme(), false);
 registerTilt();
 // Ask the browser not to evict our storage (saved stops and routes).
 void navigator.storage?.persist?.();

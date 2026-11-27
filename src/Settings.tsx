@@ -1,10 +1,28 @@
 import { useState } from 'react';
+import { applyTheme, loadTheme, THEMES, type Theme } from './theme.ts';
 import { ACCENTS, applyAccent, loadAccent, type AccentName } from './accent.ts';
 
 export default function Settings() {
   const [accent, setAccent] = useState<AccentName>(loadAccent);
+  const [theme, setTheme] = useState<Theme>(loadTheme);
   return (
     <>
+      <h2 className="title">theme</h2>
+      <div className="themes">
+        {THEMES.map(t => (
+          <button
+            key={t.name}
+            className="btn"
+            aria-pressed={theme === t.name}
+            onClick={() => {
+              setTheme(t.name);
+              applyTheme(t.name);
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
       <h2 className="title">accent colour</h2>
       <div className="swatches">
         {ACCENTS.map(a => (

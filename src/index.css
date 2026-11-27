@@ -29,6 +29,9 @@
   --on-accent: #fff;
   --bus: #647687;
   --late: #f0a30a;
+  --on-late: #000;
+  --bad: #e51400;
+  --on-bad: #fff;
   --gutter: 24px;
   --t-pivot: 48px;
   --t-title: 32px;
@@ -37,6 +40,35 @@
   --t-small: 14px;
   --t-tiny: 11px;
 
+  color-scheme: dark;
+}
+
+/* Light theme: forced (data-theme="light") or automatic (no data-theme + OS preference). */
+:root[data-theme='light'] {
+  --bg: #fff;
+  --fg: #000;
+  --muted: #595959;
+  --bar: #e6e6e6;
+  --late: #a85c00;
+  --on-late: #fff;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --bg: #fff;
+    --fg: #000;
+    --muted: #595959;
+    --bar: #e6e6e6;
+    --late: #a85c00;
+    --on-late: #fff;
+
+    color-scheme: light;
+  }
+}
+
+:root[data-theme='dark'] {
   color-scheme: dark;
 }
 
@@ -582,7 +614,7 @@ button:disabled {
   margin-left: 6px;
   padding: 0 4px;
   font-size: var(--t-tiny);
-  color: #000;
+  color: var(--on-late);
   background: var(--late);
   text-transform: lowercase;
 }
@@ -706,13 +738,13 @@ button:disabled {
 }
 
 .tag.warn {
-  color: #000;
+  color: var(--on-late);
   background: var(--late);
 }
 
 .tag.bad {
-  color: #fff;
-  background: #e51400;
+  color: var(--on-bad);
+  background: var(--bad);
 }
 
 .dep .tag.bad {
@@ -761,4 +793,17 @@ button:disabled {
   font-size: var(--t-small);
   color: var(--muted);
   margin: 0;
+}
+
+.themes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 32px;
+}
+
+.themes .btn[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
 }
