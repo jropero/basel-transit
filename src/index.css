@@ -195,6 +195,23 @@ button {
   vertical-align: -0.2em;
 }
 
+/* Icon beside text: centred on the x-height of the line; the svg sits on the baseline of its
+   own zero-height box. Wrap the icon in one of these. */
+.acc,
+.info-btn,
+.warn-mark {
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
+  vertical-align: middle;
+}
+
+.acc .icon,
+.info-btn .icon,
+.warn-mark .icon {
+  vertical-align: baseline;
+}
+
 .title {
   font-size: var(--t-title);
   font-weight: 300;
@@ -238,20 +255,11 @@ button {
   color: var(--muted);
 }
 
-/* Stop info button (inside the title), panel, line list and nearby stops. The button is
-   centred on the title's x-height: the svg sits on the baseline of a zero-height line box. */
+/* Stop info button (inside the title), panel, line list and nearby stops */
 .info-btn {
-  display: inline-flex;
-  align-items: center;
   margin-left: 8px;
   padding: 0;
-  line-height: 0;
   color: var(--muted);
-  vertical-align: middle;
-}
-
-.info-btn .icon {
-  vertical-align: baseline;
 }
 
 .info-btn[aria-expanded='true'] {
@@ -1095,4 +1103,10 @@ button:disabled {
     transform: translateY(16px);
     opacity: 0;
   }
+}
+
+/* "with assistance": the + rides at the top of the centred icon box. */
+.acc sup {
+  align-self: flex-start;
+  line-height: 1;
 }
