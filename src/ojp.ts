@@ -541,7 +541,8 @@ export const lateMinutes = (s: Stamp | null) =>
   s ? Math.max(0, Math.round((s.expected.getTime() - s.planned.getTime()) / 60000)) : 0;
 
 if (typeof DOMParser !== 'undefined') {
-  const t = (h: number, m: number) => `2026-11-27T${String(h).padStart(2, '0')}:${m}:00Z`;
+  const t = (h: number, m: number) =>
+    `2026-11-27T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00Z`;
   const st = (tag: string, plan: string, est?: string) =>
     `<${tag}><TimetabledTime>${plan}</TimetabledTime>${est ? `<EstimatedTime>${est}</EstimatedTime>` : ''}</${tag}>`;
   const call = (kind: string, ref: string, order: number, calls: string) =>
