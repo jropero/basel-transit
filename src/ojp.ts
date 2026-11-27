@@ -671,6 +671,35 @@ export const hhmm = (d: Date) =>
 // "Basel, Burgfelderplatz" -> "Burgfelderplatz" for compact headers.
 export const short = (name: string) => name.replace(/^Basel,\s*/, '');
 
+// "Riehen, Dorfplatz" -> town "Riehen", stop "Dorfplatz": split on the first ", "; no comma, no town.
+export const splitTown = (name: string): { town: string; stop: string } => {
+  const i = name.indexOf(', ');
+  return i < 0 ? { town: '', stop: name } : { town: name.slice(0, i), stop: name.slice(i + 2) };
+};
+
+// Per row of a stop list: the town to announce above it (the first town, then wherever it changes),
+// else ''. A name without a town announces nothing and does not end the current one.
+export function townHeadings(names: string[]): string[] {
+  let last = '';
+  return names.map(n => {
+    const { town } = splitTown(n);
+    const entering = town && town !== last ? town : '';
+    last = town || last;
+    return entering;
+  });
+}
+console.assert(
+  splitTown('Basel, Burgfelderplatz').town === 'Basel' &&
+    splitTown('Basel, Burgfelderplatz').stop === 'Burgfelderplatz' &&
+    splitTown('Saint-Louis (F), Gare, Nord').stop === 'Gare, Nord' &&
+    splitTown('Bahnhof').town === '' &&
+    splitTown('Bahnhof').stop === 'Bahnhof' &&
+    townHeadings(['Basel, A', 'Basel, B', 'X', 'Riehen, C', 'Riehen, D', 'Basel, E']).join(
+      '|',
+    ) === 'Basel|||Riehen||Basel',
+  'splitTown / townHeadings',
+);
+
 // Coordinates of a stop from the known-stops directory (filled by every response), or none.
 export const knownCoords = (ref: string): { lat: number; lon: number } | null => {
   const k = loadJson<Known>(PLACES_KEY, {})[ref];

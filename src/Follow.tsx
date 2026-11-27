@@ -8,7 +8,8 @@ import {
   ojp,
   parseTripInfo,
   rememberDoc,
-  short,
+  splitTown,
+  townHeadings,
   tripInfoBody,
   tripProgress,
   type Progress,
@@ -33,14 +34,14 @@ export function StopLink({
   env: FollowEnv;
 }) {
   const { ref, name } = stop;
-  if (!ref || ref === env.here) return <span>{short(name)}</span>;
+  if (!ref || ref === env.here) return <span>{splitTown(name).stop}</span>;
   return (
     <button
       className="stop-link tilt"
       aria-label={`Show departures for ${name}`}
       onClick={e => env.onJump({ ref, name }, e.currentTarget)}
     >
-      <span>{short(name)}</span>
+      <span>{splitTown(name).stop}</span>
     </button>
   );
 }
@@ -118,10 +119,10 @@ export function TripPicker({
 }
 
 function positionText(p: Progress, calls: TripCall[]) {
-  const name = short(calls[p.index].name);
+  const name = splitTown(calls[p.index].name).stop;
   if (p.state === 'at') return `at ${name}`;
   if (p.state === 'arriving') return `arriving at ${name}`;
-  return `between ${short(calls[p.index - 1].name)} and ${name}`;
+  return `between ${splitTown(calls[p.index - 1].name).stop} and ${name}`;
 }
 
 // First row shown: the earlier stops fold away, but never the vehicle's previous stop or this stop.
@@ -139,6 +140,9 @@ console.assert(
 );
 
 const foldLabel = (n: number) => (n === 1 ? '1 earlier stop' : `${n} earlier stops`);
+
+// Muted uppercase town heading above the stops entering that town.
+export const TownRow = ({ town }: { town: string }) => <li className="town">{town}</li>;
 
 function TripRow({
   c,
@@ -175,6 +179,9 @@ function TripList({
 }) {
   const [every, setEvery] = useState(false);
   const first = firstShown(here, progress);
+  const from = every ? 0 : first;
+  const shown = calls.slice(from);
+  const towns = townHeadings(shown.map(c => c.name));
   return (
     <ol className="route">
       {first > 0 && (
@@ -188,24 +195,26 @@ function TripList({
           </button>
         </li>
       )}
-      {calls.slice(every ? 0 : first).flatMap((c, k) => {
-        const i = (every ? 0 : first) + k;
-        const row = (
+      {shown.flatMap((c, k) => {
+        const i = from + k;
+        const items = [];
+        if (towns[k]) items.push(<TownRow key={`town-${i}`} town={towns[k]} />);
+        if (progress?.index === i)
+          items.push(
+            <li key={`pos-${i}`} className="pos" aria-current="true">
+              {positionText(progress, calls)}
+            </li>,
+          );
+        items.push(
           <TripRow
             key={`${c.ref}-${i}`}
             c={c}
             here={i === here}
             passed={!!progress && i < progress.index}
             env={env}
-          />
+          />,
         );
-        if (progress?.index !== i) return [row];
-        return [
-          <li key={`pos-${i}`} className="pos" aria-current="true">
-            {positionText(progress, calls)}
-          </li>,
-          row,
-        ];
+        return items;
       })}
     </ol>
   );

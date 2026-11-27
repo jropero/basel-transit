@@ -551,6 +551,13 @@ button:disabled {
   cursor: pointer;
 }
 
+.route li.town {
+  margin-top: 6px;
+  font-size: var(--t-small);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .route li.fold .stop-link {
   text-decoration: underline;
 }

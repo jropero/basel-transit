@@ -25,6 +25,7 @@ import {
   short,
   situationRefs,
   text,
+  townHeadings,
   type Access,
   type Quay,
   type Situation,
@@ -36,7 +37,7 @@ import AppBar from './AppBar.tsx';
 import Settings from './Settings.tsx';
 import Trail from './Trail.tsx';
 import { useStopNav, type Nav } from './nav.ts';
-import { FollowTrip, StopLink, TripPicker, type FollowEnv } from './Follow.tsx';
+import { FollowTrip, StopLink, TownRow, TripPicker, type FollowEnv } from './Follow.tsx';
 import RefreshBar, { REFRESH_MS } from './RefreshBar.tsx';
 import RoutePlanner from './Route.tsx';
 import { WeatherMark } from './Weather.tsx';
@@ -348,12 +349,14 @@ function OnwardStops({
   env: FollowEnv;
 }) {
   if (!g) return <li>{offline ? 'stops not cached' : 'loading stops…'}</li>;
-  return g.stops.map((s, i) => (
+  const towns = townHeadings(g.stops.map(s => s.name));
+  return g.stops.flatMap((s, i) => [
+    ...(towns[i] ? [<TownRow key={`town-${i}`} town={towns[i]} />] : []),
     <li key={i}>
       <StopLink stop={s} env={env} />
       <span>· {s.min} min</span>
-    </li>
-  ));
+    </li>,
+  ]);
 }
 
 // The open group: pick a departure and follow its journey; the cached onward stops stand in when
