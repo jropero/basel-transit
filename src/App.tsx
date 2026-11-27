@@ -33,7 +33,7 @@ import {
 } from './ojp.ts';
 import AccessMark, { Diverted, QuayMark } from './Access.tsx';
 import Alerts, { AlertMark, relevantSituations } from './Alerts.tsx';
-import AppBar from './AppBar.tsx';
+import AppBar, { type BarAction } from './AppBar.tsx';
 import Settings from './Settings.tsx';
 import Trail from './Trail.tsx';
 import { useStopNav, type Nav } from './nav.ts';
@@ -610,6 +610,10 @@ type View = (typeof VIEWS)[number];
 
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+// While exploring (two or more stops in the trail) the app bar leads with "back".
+const backAction = (trail: unknown[]): BarAction[] =>
+  trail.length < 2 ? [] : [{ icon: 'back', label: 'Back', onClick: () => history.back() }];
+
 function StopsRow({
   stops,
   selected,
@@ -817,6 +821,7 @@ function Departures({
       {active && (
         <AppBar
           actions={[
+            ...backAction(nav.trail ?? []),
             { icon: 'refresh', label: 'Refresh', onClick: load },
             {
               icon: 'search',
