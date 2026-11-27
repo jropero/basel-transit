@@ -619,7 +619,8 @@ const backAction = (trail: unknown[]): BarAction[] =>
 // "Burgfelderplatz Basel": the stop, then its town muted (names repeat across towns).
 function StopTitle({ name }: { name: string }) {
   const { town, stop } = splitTown(name);
-  if (!town) return short(name);
+  // Stations already start with their town ("Basel SBB").
+  if (!town || stop.startsWith(town)) return short(name);
   return (
     <>
       {stop} <span className="title-town">{town}</span>

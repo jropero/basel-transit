@@ -674,10 +674,13 @@ export const hhmm = (d: Date) =>
 // "Basel, Burgfelderplatz" -> "Burgfelderplatz" for compact headers.
 export const short = (name: string) => name.replace(/^Basel,\s*/, '');
 
-// "Riehen, Dorfplatz" -> town "Riehen", stop "Dorfplatz": split on the first ", "; no comma, no town.
+// "Riehen, Dorfplatz" -> town "Riehen", stop "Dorfplatz": split on the first ", ". Railway
+// stations have no comma and start with their town ("Basel SBB", "Muttenz"): the first word is
+// the town and the stop keeps the whole name.
 export const splitTown = (name: string): { town: string; stop: string } => {
   const i = name.indexOf(', ');
-  return i < 0 ? { town: '', stop: name } : { town: name.slice(0, i), stop: name.slice(i + 2) };
+  if (i >= 0) return { town: name.slice(0, i), stop: name.slice(i + 2) };
+  return { town: name.trim().split(/\s+/)[0] ?? '', stop: name };
 };
 
 // Per row of a stop list: the town to announce above it (the first town, then wherever it changes),
@@ -695,11 +698,18 @@ console.assert(
   splitTown('Basel, Burgfelderplatz').town === 'Basel' &&
     splitTown('Basel, Burgfelderplatz').stop === 'Burgfelderplatz' &&
     splitTown('Saint-Louis (F), Gare, Nord').stop === 'Gare, Nord' &&
-    splitTown('Bahnhof').town === '' &&
-    splitTown('Bahnhof').stop === 'Bahnhof' &&
-    townHeadings(['Basel, A', 'Basel, B', 'X', 'Riehen, C', 'Riehen, D', 'Basel, E']).join(
-      '|',
-    ) === 'Basel|||Riehen||Basel',
+    splitTown('Basel SBB').town === 'Basel' &&
+    splitTown('Basel SBB').stop === 'Basel SBB' &&
+    splitTown('Muttenz').town === 'Muttenz' &&
+    splitTown('').town === '' &&
+    townHeadings([
+      'Basel, A',
+      'Basel, B',
+      'Basel SBB',
+      'Riehen, C',
+      'Riehen, D',
+      'Basel, E',
+    ]).join('|') === 'Basel|||Riehen||Basel',
   'splitTown / townHeadings',
 );
 
