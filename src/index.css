@@ -807,3 +807,44 @@ button:disabled {
   border-color: var(--accent);
   color: var(--on-accent);
 }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Saved-stop order: name grows, two compact buttons. */
+.saved-order {
+  list-style: none;
+  margin: 0 0 32px;
+  padding: 0;
+}
+
+.saved-order li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.saved-order .saved-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 300;
+}
+
+.saved-order .btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+}
+
+.saved-empty {
+  color: var(--muted);
+  margin: 0 0 32px;
+}

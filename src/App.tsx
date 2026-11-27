@@ -768,7 +768,7 @@ export default function App() {
           />,
         )}
         {pane('route', <RoutePlanner from={selected} shown={view === 'route'} />)}
-        {pane('settings', <Settings />)}
+        {pane('settings', <Settings stops={stops} onStops={updateStops} />)}
       </div>
     </main>
   );

@@ -497,6 +497,24 @@ export const loadStops = (): Stop[] => {
 };
 export const saveStops = (stops: Stop[]) => saveJson(STOPS_KEY, stops);
 
+// Swaps a saved stop with its neighbour; an out-of-range move returns the same array.
+export const moveSaved = (stops: Stop[], index: number, delta: -1 | 1): Stop[] => {
+  const to = index + delta;
+  if (index < 0 || index >= stops.length || to < 0 || to >= stops.length) return stops;
+  const next = [...stops];
+  [next[index], next[to]] = [next[to], next[index]];
+  return next;
+};
+{
+  const abc = ['a', 'b', 'c'].map(ref => ({ ref, name: ref.toUpperCase() }));
+  const refs = (x: Stop[]) => x.map(v => v.ref).join('');
+  console.assert(refs(moveSaved(abc, 1, -1)) === 'bac', 'moveSaved up');
+  console.assert(refs(moveSaved(abc, 1, 1)) === 'acb', 'moveSaved down');
+  console.assert(moveSaved(abc, 0, -1) === abc, 'moveSaved first up');
+  console.assert(moveSaved(abc, 2, 1) === abc, 'moveSaved last down');
+  console.assert(refs(abc) === 'abc', 'moveSaved does not mutate');
+}
+
 const ROUTES_KEY = 'basel-transit:routes';
 export const loadRoutes = (): Route[] => {
   const r = loadJson<Route[]>(ROUTES_KEY, []);
