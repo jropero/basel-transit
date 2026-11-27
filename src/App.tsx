@@ -996,7 +996,7 @@ function PivotHeader({ view, onSelect }: { view: View; onSelect: (v: View) => vo
 
 export default function App() {
   const [stops, setStops] = useState<Stop[]>(loadStops);
-  const { nav, select, jump } = useStopNav(stops[0]);
+  const { nav, select, jump, toast } = useStopNav(stops[0]);
   const { scroller, view, onScroll, goTo } = usePivot();
 
   function updateStops(next: Stop[]) {
@@ -1030,6 +1030,9 @@ export default function App() {
         {pane('route', <RoutePlanner from={nav.stop} shown={view === 'route'} />)}
         {pane('settings', <Settings stops={stops} onStops={updateStops} />)}
       </div>
+      <p className="toast" role="status" aria-live="polite">
+        {toast && <span>Press back again to exit</span>}
+      </p>
     </main>
   );
 }

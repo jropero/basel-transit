@@ -785,6 +785,7 @@ button:disabled {
     transform: none;
   }
 
+  .toast span,
   .turn,
   .bar-menu,
   .views-row {
@@ -962,4 +963,32 @@ button:disabled {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--on-accent);
+}
+
+/* "Press back again to exit": above the app bar, never blocks taps. */
+.toast {
+  position: fixed;
+  right: 0;
+  bottom: calc(88px + env(safe-area-inset-bottom));
+  left: 0;
+  z-index: 30;
+  margin: 0;
+  text-align: center;
+  pointer-events: none;
+}
+
+.toast span {
+  display: inline-block;
+  padding: 10px 16px;
+  background: var(--bar);
+  color: var(--fg);
+  font-size: var(--t-small);
+  animation: toast-in 0.2s ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
 }
