@@ -12,6 +12,7 @@ import {
   tripInfoBody,
   tripProgress,
   type Progress,
+  type Stop,
   type TripCall,
 } from './ojp.ts';
 import { REFRESH_MS } from './RefreshBar.tsx';
@@ -19,7 +20,30 @@ import { REFRESH_MS } from './RefreshBar.tsx';
 export type FollowEnv = {
   active: boolean; // departures pane on screen: polling only then
   here: string; // place ref of the stop being shown
+  onJump: (stop: Stop, from: HTMLElement) => void; // show another stop's departures
 };
+
+// A stop of a list: a button that jumps to the stop's departures, except for the stop being shown
+// (or one without a ref, e.g. an old cached list).
+export function StopLink({
+  stop,
+  env,
+}: {
+  stop: { ref?: string; name: string };
+  env: FollowEnv;
+}) {
+  const { ref, name } = stop;
+  if (!ref || ref === env.here) return <span>{short(name)}</span>;
+  return (
+    <button
+      className="stop-link tilt"
+      aria-label={`Show departures for ${name}`}
+      onClick={e => env.onJump({ ref, name }, e.currentTarget)}
+    >
+      <span>{short(name)}</span>
+    </button>
+  );
+}
 
 export type Followable = { journey: string; day: string; planned: Date; cancelled: boolean };
 
@@ -116,14 +140,24 @@ console.assert(
 
 const foldLabel = (n: number) => (n === 1 ? '1 earlier stop' : `${n} earlier stops`);
 
-function TripRow({ c, here, passed }: { c: TripCall; here: boolean; passed: boolean }) {
+function TripRow({
+  c,
+  here,
+  passed,
+  env,
+}: {
+  c: TripCall;
+  here: boolean;
+  passed: boolean;
+  env: FollowEnv;
+}) {
   const stamp = callStamp(c);
   const late = lateMinutes(stamp) >= 1;
   const cls = [here && 'here', passed && 'passed'].filter(Boolean).join(' ');
   return (
     <li className={cls || undefined}>
       <span className={late ? 'at late' : 'at'}>{stamp ? hhmm(stamp.expected) : ''}</span>
-      <span>{short(c.name)}</span>
+      <StopLink stop={c} env={env} />
     </li>
   );
 }
@@ -132,10 +166,12 @@ function TripList({
   calls,
   here,
   progress,
+  env,
 }: {
   calls: TripCall[];
   here: number;
   progress: Progress | null;
+  env: FollowEnv;
 }) {
   const [every, setEvery] = useState(false);
   const first = firstShown(here, progress);
@@ -160,6 +196,7 @@ function TripList({
             c={c}
             here={i === here}
             passed={!!progress && i < progress.index}
+            env={env}
           />
         );
         if (progress?.index !== i) return [row];
@@ -196,6 +233,7 @@ export function FollowTrip({
           calls={calls}
           here={calls.findIndex(c => c.ref === env.here)}
           progress={tripProgress(calls, now)}
+          env={env}
         />
       ) : (
         fallback

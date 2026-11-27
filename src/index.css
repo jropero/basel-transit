@@ -257,6 +257,28 @@ button {
   color: var(--fg);
 }
 
+/* Breadcrumbs of a stop exploration, in the saved-stops row style. */
+.trail {
+  align-items: baseline;
+  gap: 8px;
+}
+
+.trail span {
+  font-size: var(--t-item);
+  font-weight: 300;
+  text-transform: lowercase;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.trail span[aria-hidden='true'] {
+  margin-left: 6px;
+}
+
+.trail span[aria-current='true'] {
+  color: var(--fg);
+}
+
 /* Bottom app bar: round outlined icon buttons; "..." reveals the labels and the menu. */
 .appbar {
   position: fixed;

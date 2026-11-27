@@ -15,6 +15,7 @@ import {
   ojp,
   ojpCached,
   parseSituations,
+  placeRef,
   rememberDoc,
   replacement,
   sampleLabel,
@@ -33,7 +34,9 @@ import AccessMark, { Diverted, QuayMark } from './Access.tsx';
 import Alerts, { AlertMark, relevantSituations } from './Alerts.tsx';
 import AppBar from './AppBar.tsx';
 import Settings from './Settings.tsx';
-import { FollowTrip, TripPicker, type FollowEnv } from './Follow.tsx';
+import Trail from './Trail.tsx';
+import { useStopNav, type Nav } from './nav.ts';
+import { FollowTrip, StopLink, TripPicker, type FollowEnv } from './Follow.tsx';
 import RefreshBar, { REFRESH_MS } from './RefreshBar.tsx';
 import RoutePlanner from './Route.tsx';
 import { WeatherMark } from './Weather.tsx';
@@ -134,7 +137,7 @@ type OnwardGroup = {
   line: string;
   mode: string;
   to: string;
-  stops: { name: string; min: number }[];
+  stops: { name: string; min: number; ref?: string }[];
   headway: number | null;
   measuredAt: number; // median planned departure of the sample
 };
@@ -151,7 +154,11 @@ function parseOnward(doc: Document): Record<string, OnwardGroup> {
     if (groups[key]) continue;
     const stops = all(ev, 'OnwardCall').map(c => {
       const t = new Date(text(all(c, 'ServiceDeparture')[0] ?? c, 'TimetabledTime')).getTime();
-      return { name: text(c, 'StopPointName'), min: Math.round((t - base) / 60000) };
+      return {
+        name: text(c, 'StopPointName'),
+        min: Math.round((t - base) / 60000),
+        ref: placeRef(text(c, 'StopPointRef')),
+      };
     });
     groups[key] = {
       line,
@@ -170,7 +177,7 @@ function parseOnward(doc: Document): Record<string, OnwardGroup> {
 }
 
 const ONWARD_TTL = 7 * 24 * 60 * 60 * 1000;
-const onwardKey = (ref: string) => `basel-transit:onward2:${ref}`;
+const onwardKey = (ref: string) => `basel-transit:onward3:${ref}`;
 
 // Offline, stale beats nothing: the TTL is ignored.
 function loadOnward(ref: string, offline: boolean): Record<string, OnwardGroup> | null {
@@ -331,11 +338,20 @@ function GroupBody({
   );
 }
 
-function OnwardStops({ g, offline }: { g: OnwardGroup | undefined; offline: boolean }) {
+function OnwardStops({
+  g,
+  offline,
+  env,
+}: {
+  g: OnwardGroup | undefined;
+  offline: boolean;
+  env: FollowEnv;
+}) {
   if (!g) return <li>{offline ? 'stops not cached' : 'loading stops…'}</li>;
   return g.stops.map((s, i) => (
     <li key={i}>
-      {s.name} · {s.min} min
+      <StopLink stop={s} env={env} />
+      <span>· {s.min} min</span>
     </li>
   ));
 }
@@ -359,7 +375,7 @@ function OpenGroup({
   const dep = list.find(d => d.journey === picked) ?? list[0];
   const onward = (
     <ul className="route">
-      <OnwardStops g={g} offline={offline} />
+      <OnwardStops g={g} offline={offline} env={env} />
     </ul>
   );
   if (!dep?.journey) return onward;
@@ -689,17 +705,20 @@ function TimeRows({ deps, now }: { deps: Departure[]; now: number }) {
 // Departures pane: owns search, onward stops and the 15s refresh (only while `active`).
 function Departures({
   stops,
-  selected,
+  nav,
   active,
   onSelect,
+  onJump,
   onStops,
 }: {
   stops: Stop[];
-  selected: Stop;
+  nav: Nav;
   active: boolean;
   onSelect: (s: Stop) => void;
+  onJump: (s: Stop, openLine?: string) => void;
   onStops: (next: Stop[]) => void;
 }) {
+  const selected = nav.stop;
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<(Stop & { dist?: number })[]>([]);
   const [open, setOpen] = useState<string | null>(null);
@@ -720,12 +739,19 @@ function Departures({
     load,
   } = useDepartures(selected.ref, active, arrivals);
 
-  // Switching stops resets the open line and its onward stops; the load effect refetches.
-  function selectStop(s: Stop) {
-    onSelect(s);
-    if (s.ref === selected.ref) return;
-    setOpen(null);
+  // A new stop (picked, jumped to, or reached through system back) resets the open line (back
+  // re-opens the one it was left with) and the onward stops; the load effect refetches.
+  useEffect(() => {
+    setOpen(nav.openLine ?? null);
     setOnward(null);
+  }, [nav.stop.ref, nav.openLine, setOnward]);
+
+  const selectStop = onSelect;
+
+  // From a stop list: show that stop (not saved), start at the top of the pane.
+  function jumpTo(s: Stop, from: HTMLElement) {
+    from.closest('.pane')?.scrollTo({ top: 0 });
+    onJump(s, open ?? undefined);
   }
 
   async function nearMe() {
@@ -811,6 +837,7 @@ function Departures({
         />
       )}
       <StopsRow stops={stops} selected={selected} onSelect={selectStop} />
+      <Trail trail={nav.trail ?? []} />
       <div className="title-row">
         <h2 className="title">{short(selected.name)}</h2>
         <WeatherMark lat={coords?.lat} lon={coords?.lon} />
@@ -854,7 +881,7 @@ function Departures({
             isOpen={open === key}
             offline={offline !== null}
             now={now}
-            env={{ active, here: selected.ref }}
+            env={{ active, here: selected.ref, onJump: jumpTo }}
             onToggle={() => toggle(key)}
           />
         ))
@@ -966,7 +993,7 @@ function PivotHeader({ view, onSelect }: { view: View; onSelect: (v: View) => vo
 
 export default function App() {
   const [stops, setStops] = useState<Stop[]>(loadStops);
-  const [selected, setSelected] = useState<Stop>(stops[0]);
+  const { nav, select, jump } = useStopNav(stops[0]);
   const { scroller, view, onScroll, goTo } = usePivot();
 
   function updateStops(next: Stop[]) {
@@ -990,13 +1017,14 @@ export default function App() {
           'departures',
           <Departures
             stops={stops}
-            selected={selected}
+            nav={nav}
             active={view === 'departures'}
-            onSelect={setSelected}
+            onSelect={select}
+            onJump={jump}
             onStops={updateStops}
           />,
         )}
-        {pane('route', <RoutePlanner from={selected} shown={view === 'route'} />)}
+        {pane('route', <RoutePlanner from={nav.stop} shown={view === 'route'} />)}
         {pane('settings', <Settings stops={stops} onStops={updateStops} />)}
       </div>
     </main>
