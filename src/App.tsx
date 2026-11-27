@@ -172,6 +172,28 @@ const byExpected = (a: Departure, b: Departure) =>
   console.assert([late, onTime].sort(byExpected)[0] === onTime, 'byExpected');
 }
 
+type SortMode = 'line' | 'time';
+// Anything but 'time' (including a missing or foreign stored value) means 'line'.
+const parseSort = (v: unknown): SortMode => (v === 'time' ? 'time' : 'line');
+
+const TIME_ROWS_MAX = 30;
+
+// "by time": every departure in one list by expected time, capped (cancelled ones included).
+const timeOrdered = (deps: Departure[], max = TIME_ROWS_MAX) =>
+  [...deps].sort(byExpected).slice(0, max);
+{
+  const mk = (t: number) => ({ expected: new Date(t), planned: new Date(t) }) as Departure;
+  const out = timeOrdered([mk(3), mk(1), mk(2)], 2);
+  console.assert(
+    out.length === 2 && out[0].expected.getTime() === 1 && out[1].expected.getTime() === 2,
+    'timeOrdered sorts by expected time and caps',
+  );
+  console.assert(
+    parseSort('time') === 'time' && parseSort('x') === 'line' && parseSort(null) === 'line',
+    'parseSort defaults to line',
+  );
+}
+
 function groupByDirection(deps: Departure[]) {
   const groups = new Map<string, Departure[]>();
   for (const d of deps) {
@@ -228,6 +250,50 @@ function DepartureRow({ d, firstTo, now }: { d: Departure; firstTo: string; now:
   );
 }
 
+function GroupBody({
+  list,
+  g,
+  offline,
+  now,
+}: {
+  list: Departure[];
+  g: OnwardGroup | undefined;
+  offline: boolean;
+  now: number;
+}) {
+  const head = list[0] ?? g!;
+  const every = everyLabel(offline, list, g, now);
+  return (
+    <>
+      <span className={`tile ${head.mode}`}>
+        <b>{head.line}</b>
+        <small>{head.mode}</small>
+      </span>
+      <span className="deps">
+        <span className="dest">
+          {head.to}
+          <AlertMark on={list.some(d => d.alerts.length > 0)} />
+        </span>
+        {every && <span className="headway">{every}</span>}
+        {list.length === 0 && <span className="headway">no cached departures</span>}
+        {list.map((d, i) => (
+          <DepartureRow key={i} d={d} firstTo={list[0].to} now={now} />
+        ))}
+      </span>
+    </>
+  );
+}
+
+function OnwardStops({ g, offline }: { g: OnwardGroup | undefined; offline: boolean }) {
+  if (!g) return <li>{offline ? 'stops not cached' : 'loading stops…'}</li>;
+  return g.stops.map((s, i) => (
+    <li key={i}>
+      {s.name} · {s.min} min
+    </li>
+  ));
+}
+
+// Without `onToggle` (by time) the group is a plain row: no onward stops to open.
 function LineGroup({
   list,
   g,
@@ -241,40 +307,21 @@ function LineGroup({
   isOpen: boolean;
   offline: boolean;
   now: number;
-  onToggle: () => void;
+  onToggle?: () => void;
 }) {
-  const head = list[0] ?? g!;
-  const every = everyLabel(offline, list, g, now);
+  const body = <GroupBody list={list} g={g} offline={offline} now={now} />;
   return (
     <section>
-      <button className="group tilt" aria-expanded={isOpen} onClick={onToggle}>
-        <span className={`tile ${head.mode}`}>
-          <b>{head.line}</b>
-          <small>{head.mode}</small>
-        </span>
-        <span className="deps">
-          <span className="dest">
-            {head.to}
-            <AlertMark on={list.some(d => d.alerts.length > 0)} />
-          </span>
-          {every && <span className="headway">{every}</span>}
-          {list.length === 0 && <span className="headway">no cached departures</span>}
-          {list.map((d, i) => (
-            <DepartureRow key={i} d={d} firstTo={list[0].to} now={now} />
-          ))}
-        </span>
-      </button>
+      {onToggle ? (
+        <button className="group tilt" aria-expanded={isOpen} onClick={onToggle}>
+          {body}
+        </button>
+      ) : (
+        <div className="group">{body}</div>
+      )}
       {isOpen && (
         <ul className="route">
-          {g ? (
-            g.stops.map((s, i) => (
-              <li key={i}>
-                {s.name} · {s.min} min
-              </li>
-            ))
-          ) : (
-            <li>{offline ? 'stops not cached' : 'loading stops…'}</li>
-          )}
+          <OnwardStops g={g} offline={offline} />
         </ul>
       )}
     </section>
@@ -476,6 +523,57 @@ function StopsRow({
   );
 }
 
+const SORT_KEY = 'basel-transit:sort';
+const SORT_MODES: { id: SortMode; label: string }[] = [
+  { id: 'line', label: 'by line' },
+  { id: 'time', label: 'by time' },
+];
+
+// The by line / by time choice, kept across stops and reloads.
+function useSortMode() {
+  const [sort, setSort] = useState<SortMode>(() =>
+    parseSort(loadJson<unknown>(SORT_KEY, null)),
+  );
+  const choose = (m: SortMode) => {
+    setSort(m);
+    saveJson(SORT_KEY, m);
+  };
+  return [sort, choose] as const;
+}
+
+// Switch between grouping departures by line and one list by time.
+function SortSwitch(p: { show: boolean; sort: SortMode; onSort: (m: SortMode) => void }) {
+  if (!p.show) return null;
+  return (
+    <div className="board-mode" role="group" aria-label="List order">
+      {SORT_MODES.map(m => (
+        <button
+          key={m.id}
+          className="btn tilt"
+          aria-pressed={p.sort === m.id}
+          onClick={() => p.onSort(m.id)}
+        >
+          {m.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// "by time": one single-departure row per departure, shown like a group of one.
+function TimeRows({ deps, now }: { deps: Departure[]; now: number }) {
+  return timeOrdered(deps).map(d => (
+    <LineGroup
+      key={`${d.line}|${d.dir}|${d.planned.getTime()}`}
+      list={[d]}
+      g={undefined}
+      isOpen={false}
+      offline={false}
+      now={now}
+    />
+  ));
+}
+
 // Departures pane: owns search, onward stops and the 15s refresh (only while `active`).
 function Departures({
   stops,
@@ -566,6 +664,9 @@ function Departures({
 
   const now = useNow();
   const groups = visibleGroups(deps, offline !== null, onward, now);
+  const [sort, setSort] = useSortMode();
+  // Offline the cached list still holds departures that have left.
+  const upcoming = offline !== null ? deps.filter(d => d.expected.getTime() > now) : deps;
 
   return (
     <>
@@ -619,17 +720,23 @@ function Departures({
 
       <Alerts situations={situations} ids={deps.flatMap(d => d.alerts)} />
 
-      {groups.map(([key, list]) => (
-        <LineGroup
-          key={key}
-          list={list}
-          g={onward?.[key]}
-          isOpen={open === key}
-          offline={offline !== null}
-          now={now}
-          onToggle={() => toggle(key)}
-        />
-      ))}
+      <SortSwitch show={deps.length > 0} sort={sort} onSort={setSort} />
+
+      {sort === 'time' ? (
+        <TimeRows deps={upcoming} now={now} />
+      ) : (
+        groups.map(([key, list]) => (
+          <LineGroup
+            key={key}
+            list={list}
+            g={onward?.[key]}
+            isOpen={open === key}
+            offline={offline !== null}
+            now={now}
+            onToggle={() => toggle(key)}
+          />
+        ))
+      )}
 
       <p className="status">{status}</p>
     </>

@@ -848,3 +848,15 @@ button:disabled {
   color: var(--muted);
   margin: 0 0 32px;
 }
+
+.board-mode {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0 16px;
+}
+
+.board-mode .btn[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
